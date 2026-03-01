@@ -1,0 +1,27 @@
+# Editor
+.vscode/
+
+# External repos - not your code
+navigation2/
+slam_toolbox/
+turtlebot3/
+
+# ROS build artifacts (colcon)
+nav_ws/build/
+nav_ws/install/
+nav_ws/log/
+nav_ws/src/build/
+nav_ws/src/install/
+nav_ws/src/log/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Isaac Sim / USD
+*.usd_bak
+
+# Map serialization artifacts (regenerated at runtime)
+*.data
+*.posegraph
