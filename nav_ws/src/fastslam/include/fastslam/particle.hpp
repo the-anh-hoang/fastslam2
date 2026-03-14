@@ -10,7 +10,7 @@ struct Particle {
     double theta = 0.0;
     double w     = 1.0;
     OccupancyGridMap map;
-
+    Particle() : map(MapParams{}) {}
     explicit Particle(double x, double y, double theta, const MapParams& params = MapParams{}) : 
     x(x), y(y), theta(theta), map(params) {}
 };
