@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(pc_handler)
+project(fastslam)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -8,20 +8,42 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
-find_package(sensor_msgs)
-# uncomment the following section in order to fill in
-# further dependencies manually.
-# find_package(<dependency> REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
+find_package(OpenCV REQUIRED)
 
+add_executable(mapper_test_node
+  src/mapper_test_node.cpp
+  src/occupancy_grid_map.cpp
+  src/scan_integrator.cpp
+)
 
+target_include_directories(mapper_test_node PUBLIC
+  include
+  ${OpenCV_INCLUDE_DIRS}
+)
 
-add_executable(pc_handler src/pc_handler.cpp)
-install (TARGETS
-pc_handler DESTINATION lib/${PROJECT_NAME})
+ament_target_dependencies(mapper_test_node
+  rclcpp
+  sensor_msgs
+  nav_msgs
+  geometry_msgs
+  tf2
+  tf2_ros
+)
 
-# Linking them together:
-ament_target_dependencies(pc_handler rclcpp sensor_msgs)
+target_link_libraries(mapper_test_node
+  ${OpenCV_LIBS}
+)
 
+install(TARGETS mapper_test_node
+  DESTINATION lib/${PROJECT_NAME}
+)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
