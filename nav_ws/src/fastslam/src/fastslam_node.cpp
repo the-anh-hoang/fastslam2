@@ -40,7 +40,7 @@ namespace fastslam {
         private:
         // CONFIGS for now 
         int num_particles_ = 10; 
-        double a1_=0.2, a2_=0.2, a3_=0.2, a4_=0.2;
+        double a1_=0.1, a2_=0.1, a3_=0.1, a4_=0.1;
 
         rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
         std::unique_ptr<tf2_ros::Buffer> tf2_buffer_;
