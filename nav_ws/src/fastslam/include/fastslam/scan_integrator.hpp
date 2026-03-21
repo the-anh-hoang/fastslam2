@@ -7,7 +7,8 @@ namespace fastslam {
 
     class ScanIntegrator {
         public:
-            ScanIntegrator(float l_occ, float l_free, int alpha,
+            ScanIntegrator() {}
+            explicit ScanIntegrator(float l_occ, float l_free, int alpha,
                             double laser_dx, double laser_dy, double laser_dtheta);
 
             void integrateScan(

@@ -71,7 +71,7 @@ private:
             double delta_angle = std::abs(robot_theta - prev_theta_);
 
             // if (delta_dist < 0.5 && delta_angle < 0.436) return;
-            if (delta_dist < 0.5) return;
+            if (delta_dist < 1) return;
 
             integrator_.integrateScan(map_, scan, robot_x, robot_y, robot_theta);
             prev_x_ = robot_x;

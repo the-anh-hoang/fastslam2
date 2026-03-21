@@ -22,12 +22,39 @@
 namespace fastslam {
     class FastSlamNode : public rclcpp::Node {
         public:
-        FastSlamNode() : 
-        Node("fast_slam_node"),
-        md_(a1_, a2_, a3_, a4_),
-        particles_(num_particles_, Particle()),
-        integrator_(0.7f, -0.7f, 1, -0.064, 0.0, 0.0),
-        gen_(rd_()) {
+        FastSlamNode() : Node("fastslam_node"), gen_(rd_()) {
+            // params 
+            this->declare_parameter("num_particles", 20);
+            this->declare_parameter("a1", 0.01);
+            this->declare_parameter("a2", 0.01);
+            this->declare_parameter("a3", 0.01);
+            this->declare_parameter("a4", 0.01);
+            this->declare_parameter("z_hit", 0.90);
+            this->declare_parameter("std_hit", 0.2);
+            this->declare_parameter("z_rand", 0.1);
+            this->declare_parameter("linear_update", 0.5);
+            this->declare_parameter("angular_update", 0.2);
+            this->declare_parameter("resample_threshold", 0.5);
+            
+            num_particles_ = this->get_parameter("num_particles").as_int();
+            a1_ = this->get_parameter("a1").as_double();
+            a2_ = this->get_parameter("a2").as_double();            
+            a3_ = this->get_parameter("a3").as_double();
+            a4_ = this->get_parameter("a4").as_double();
+            z_hit_ = this->get_parameter("z_hit").as_double(); 
+            std_hit_ = this->get_parameter("std_hit").as_double();
+            z_rand_ = this->get_parameter("z_rand").as_double();
+            linear_update_ = this->get_parameter("linear_update").as_double();
+            angular_update_ = this->get_parameter("angular_update").as_double();
+            resample_threshold_ = this->get_parameter("resample_threshold").as_double(); 
+            RCLCPP_INFO(this->get_logger(), "num_particles: %d", num_particles_);
+            RCLCPP_INFO(this->get_logger(), "a1: %.4f", a1_);
+            RCLCPP_INFO(this->get_logger(), "linear_update: %.2f", linear_update_);
+
+            md_ = MotionModel(a1_, a2_, a3_, a4_);
+            particles_ = std::vector<Particle>(num_particles_, Particle()); 
+            integrator_ = ScanIntegrator(0.7f, -0.7f, 1, -0.064, 0.0, 0.0);
+
             odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
                 "/odom",
                 10,
@@ -51,25 +78,21 @@ namespace fastslam {
 
 
         private:
-        // --------------- CONFIGS for now --------------- 
-        // PARTICLE CONFIGS
-        int num_particles_ = 20;
+
+        int num_particles_;
+     
         
-        // MOTION MODEL CONFIGS
-        double a1_=0.001, a2_=0.001, a3_=0.001, a4_=0.001;
+        double a1_, a2_, a3_, a4_;
         
-        // MEASUREMENT MODEL CONFIGS
-        double z_hit_ = 0.90;
-        double std_hit_ =0.2;
-        double z_rand_ = 0.05;
+        double z_hit_ ;
+        double std_hit_;
+        double z_rand_ ;
         double p_rand_; // computed with scan range max
         
         // Scan update thresholds
-        double linear_update_      = 1;
-        double angular_update_     = 0.2;
-        double resample_threshold_ = 0.5;  // resample when N_eff < threshold * N
-        
-        // --------------- CONFIGS for now --------------- 
+        double linear_update_;
+        double angular_update_;
+        double resample_threshold_; 
 
 
 
@@ -193,7 +216,7 @@ namespace fastslam {
             double pz;
             double endpoint_x, endpoint_y;
             float dist; 
-            for (int k = 0; k < scan.ranges.size(); k += 2) {
+            for (unsigned int k = 0; k < scan.ranges.size(); k += 2) {
                 pz = 0.0;
                 if (scan.ranges[k] < scan.range_min || scan.ranges[k] > scan.range_max) continue;
                 endpoint_x = scan_x + scan.ranges[k] * std::cos(scan_theta+ (scan.angle_min+scan.angle_increment*k));

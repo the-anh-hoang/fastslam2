@@ -22,7 +22,6 @@ namespace fastslam
             );
             double delta_rot2 = normalizeAngle(delta_theta - delta_rot1);
 
-
             double noisy_rot1  = delta_rot1 + sampleNoise(
                 alpha_1_*std::abs(delta_rot1) + alpha_2_*std::abs(delta_trans)
             );
