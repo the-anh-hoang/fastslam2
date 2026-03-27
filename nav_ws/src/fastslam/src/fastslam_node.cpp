@@ -26,6 +26,9 @@ namespace fastslam {
         FastSlamNode() : Node("fastslam_node"), gen_(rd_()) {
             // params 
             this->declare_parameter("num_particles", 20);
+            this->declare_parameter("map_width", 1000); 
+            this->declare_parameter("map_height", 1000);
+            this->declare_parameter("map_res", 0.03f); // (m/cell)
             this->declare_parameter("a1", 0.01);
             this->declare_parameter("a2", 0.01);
             this->declare_parameter("a3", 0.01);
@@ -38,6 +41,10 @@ namespace fastslam {
             this->declare_parameter("resample_threshold", 0.5);
             
             num_particles_ = this->get_parameter("num_particles").as_int();
+            int map_width = this->get_parameter("map_width").as_int();
+            int map_height = this->get_parameter("map_height").as_int();
+            float map_res = static_cast<float>(this->get_parameter("map_res").as_double()); 
+            MapParams mp(map_width, map_height, map_res); 
             a1_ = this->get_parameter("a1").as_double();
             a2_ = this->get_parameter("a2").as_double();            
             a3_ = this->get_parameter("a3").as_double();
@@ -53,7 +60,7 @@ namespace fastslam {
             RCLCPP_INFO(this->get_logger(), "linear_update: %.2f", linear_update_);
 
             md_ = MotionModel(a1_, a2_, a3_, a4_);
-            particles_ = std::vector<Particle>(num_particles_, Particle()); 
+            particles_ = std::vector<Particle>(num_particles_, Particle(mp)); 
             integrator_ = ScanIntegrator(0.7f, -0.7f, 1, -0.064, 0.0, 0.0);
 
             odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(

@@ -30,7 +30,7 @@ namespace fastslam
 
         auto [scan_x_grid, scan_y_grid] = occupancy_grid.worldToGridCoordsExact(scan_x, scan_y);
         float ray_ang;
-        for (int i = 0; i < scan.ranges.size(); i++) {
+        for (int i = 0; i < scan.ranges.size(); i+=2) {
             if (scan.ranges[i] < scan.range_min || scan.ranges[i] > scan.range_max) continue;
             ray_ang = static_cast<float>(scan_theta + (scan.angle_min + scan.angle_increment*i));
             while (ray_ang > M_PI) ray_ang -= 2*M_PI;

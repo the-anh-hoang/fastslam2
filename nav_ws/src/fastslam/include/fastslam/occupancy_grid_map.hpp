@@ -16,6 +16,12 @@ namespace fastslam
 
         MapParams() :   origin_x(-(width*resolution)/2.0f),
                         origin_y(-(height*resolution)/2.0f) {}
+                        
+        MapParams(int w, int h, float res) :
+            width(w), height(h), resolution(res),    
+            origin_x(-(width*resolution)/2.0f),
+            origin_y(-(height*resolution)/2.0f) 
+            {}
     };
 
     class OccupancyGridMap {

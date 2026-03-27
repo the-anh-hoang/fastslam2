@@ -1,6 +1,9 @@
 fastslam_node:
   ros__parameters:
     num_particles: 10
+    map_width: 500
+    map_height: 500
+    map_res: 0.05
     a1: 0.001
     a2: 0.001
     a3: 0.001
