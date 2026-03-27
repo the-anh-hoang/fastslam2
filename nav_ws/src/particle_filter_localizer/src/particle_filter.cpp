@@ -280,8 +280,8 @@ std::vector<double> ParticleFilter::caclBaseToOdomTransform(const geometry_msgs:
         t.transform.rotation.z, 
         t.transform.rotation.w
     );
-
-    // odom->base_fp inverse:
+    // TODO: useless 
+    // (odom->base_f)^-1:
     double c = std::cos(odom_to_base_orientation);
     double s = std::sin(odom_to_base_orientation);
     double base_to_odom_orientation = -odom_to_base_orientation;

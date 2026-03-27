@@ -8,8 +8,9 @@
 #include <nav_msgs/msg/odometry.hpp>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_ros/transform_listener.h>
-#include <std_msgs/msg/header.hpp> 
 #include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_broadcaster.h> 
+#include <std_msgs/msg/header.hpp> 
 #include <geometry_msgs/msg/transform_stamped.hpp>
 
 #include "fastslam/occupancy_grid_map.hpp"
@@ -65,14 +66,33 @@ namespace fastslam {
                 10,
                 std::bind(&FastSlamNode::scanCallback, this, std::placeholders::_1)
             ); 
+
             map_pub_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>("/map", 10);
             particles_pub_ = this->create_publisher<geometry_msgs::msg::PoseArray>(
                 "/particles", 10
             );
+            map_odom_pub_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this); 
 
+            // Initialize transform 0 0 0
+            map_odom_tf_.header.stamp = this->now();
+            map_odom_tf_.header.frame_id = "map";
+            map_odom_tf_.child_frame_id = "odom"; 
+            map_odom_tf_.transform.translation.x = 0.0; 
+            map_odom_tf_.transform.translation.y = 0.0; 
+            map_odom_tf_.transform.translation.z = 0.0; 
+            map_odom_tf_.transform.rotation.x = 0.0;
+            map_odom_tf_.transform.rotation.y = 0.0;
+            map_odom_tf_.transform.rotation.z = 0.0;
+            map_odom_tf_.transform.rotation.w = 1.0;
+            publishMapToOdom(); 
+
+            tf_pub_timer_ = this->create_wall_timer(
+                std::chrono::milliseconds(16), // 20hz
+                std::bind(&FastSlamNode::publishMapToOdom, this)
+
+            ); 
             tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
             tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
-
 
         }
 
@@ -98,6 +118,9 @@ namespace fastslam {
 
         rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
         rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_; 
+        std::unique_ptr<tf2_ros::TransformBroadcaster> map_odom_pub_; 
+        geometry_msgs::msg::TransformStamped map_odom_tf_;
+        rclcpp::TimerBase::SharedPtr tf_pub_timer_;
         
         std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
         std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
@@ -136,7 +159,7 @@ namespace fastslam {
             double delta_dist = std::sqrt(dx*dx + dy*dy);
             double delta_rot = std::abs(curr_theta - prev_pose_.theta);
 
-            if (delta_dist < 0.5 && delta_rot < 0.05) return;
+            if (delta_dist < linear_update_ && delta_rot < angular_update_) return;
 
             Pose sampled_pose;
             for (Particle& p : particles_) {
@@ -191,11 +214,13 @@ namespace fastslam {
                     }
                     integrator_.integrateScan(particle.map, scan, particle.x, particle.y, particle.theta);
                 }
+
+                calculateOdomTf(best_particle);
                 RCLCPP_INFO(this->get_logger(), "Best particle weight: %.6f", best_particle->w);
                 RCLCPP_INFO(this->get_logger(), "Total weight in system: %.6f", total_weight);
+                resample(total_weight);
                 publishMap(*best_particle);
                 publishParticles();
-                resample(total_weight);
                 last_scan_pose_ = prev_pose_;
                 scan_initialized_ = true;
             } catch (const tf2::TransformException &ex) {
@@ -270,6 +295,50 @@ namespace fastslam {
         }
 
 
+        void calculateOdomTf(Particle* p) { 
+            // map->odom = (map->p) * (odom->p)^-1
+            geometry_msgs::msg::TransformStamped base_to_odom = tf_buffer_->lookupTransform(
+                "base_footprint", // source   
+                "odom", // target  
+                tf2::TimePointZero,
+                std::chrono::milliseconds(100)
+            ); 
+            // map->p
+            double map_to_base_x = p->x;
+            double map_to_base_y = p->y;
+            double map_to_base_rot = p->theta;
+
+            // (odom->p)^-1
+            double base_to_odom_x = base_to_odom.transform.translation.x;
+            double base_to_odom_y = base_to_odom.transform.translation.y; 
+            double base_to_odom_rot = quatToYaw(
+                base_to_odom.transform.rotation.x,
+                base_to_odom.transform.rotation.y,
+                base_to_odom.transform.rotation.z, 
+                base_to_odom.transform.rotation.w
+            );
+
+            //map->odom 
+            double s = std::sin(map_to_base_rot);
+            double c = std::cos(map_to_base_rot); 
+            double map_to_odom_x = map_to_base_x + c*base_to_odom_x - s*base_to_odom_y;
+            double map_to_odom_y = map_to_base_y + s*base_to_odom_x + c*base_to_odom_y;
+            double map_to_odom_rot = map_to_base_rot + base_to_odom_rot; 
+            map_odom_tf_.transform.translation.x = map_to_odom_x;
+            map_odom_tf_.transform.translation.y = map_to_odom_y;
+            map_odom_tf_.transform.translation.z = 0.0;
+            tf2::Quaternion q;
+            q.setRPY(0,0,map_to_odom_rot);
+            map_odom_tf_.transform.rotation.x = q.x(); 
+            map_odom_tf_.transform.rotation.y = q.y();  
+            map_odom_tf_.transform.rotation.z = q.z();  
+            map_odom_tf_.transform.rotation.w = q.w();  
+        } 
+
+        void publishMapToOdom() {
+            map_odom_tf_.header.stamp = this->now(); 
+            map_odom_pub_->sendTransform(map_odom_tf_); 
+        }
 
 
 
