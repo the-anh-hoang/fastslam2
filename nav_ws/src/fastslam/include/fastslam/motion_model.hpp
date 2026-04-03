@@ -1,16 +1,10 @@
 #ifndef FASTSLAM_MOTION_MODEL_HPP
 #define FASTSLAM_MOTION_MODEL_HPP
 #include <random>
+#include "fastslam/pose.hpp"
 
-namespace fastslam 
+namespace fastslam
 {
-    struct Pose {
-        double x, y, theta;
-        Pose() {}
-        Pose(double x, double y, double theta) : x(x), y(y), theta(theta) {}
-    };
-
-
     class MotionModel {
         public:
             MotionModel() {}

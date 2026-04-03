@@ -2,9 +2,7 @@
 #include <cmath>
 
 static double normalizeAngle(double angle) {
-        while (angle > M_PI) angle -= 2.0 * M_PI;
-        while (angle < -M_PI) angle += 2.0 * M_PI;
-        return angle;
+        return std::remainder(angle, 2.0 * M_PI);
 }
 
 namespace fastslam 
@@ -12,9 +10,9 @@ namespace fastslam
     Pose MotionModel::applyMotionModel(Pose robot_pose, Pose prev_odom, Pose curr_odom) {
             double delta_x = curr_odom.x - prev_odom.x;
             double delta_y = curr_odom.y - prev_odom.y;
-            double delta_theta = curr_odom.theta - prev_odom.theta; 
+            double delta_theta = normalizeAngle(curr_odom.theta - prev_odom.theta); 
 
-            
+            // if deltax and delta_y ~ 0, atan2(0,0) is undefined. 
             // double delta_rot1 = normalizeAngle(std::atan2(delta_y, delta_x) - prev_odom.theta);
             double delta_trans = std::sqrt(delta_x*delta_x + delta_y*delta_y);
             double delta_rot1 = normalizeAngle(
