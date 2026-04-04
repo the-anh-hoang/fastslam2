@@ -20,12 +20,9 @@ namespace fastslam {
             ); 
         
         private:
-            float l_occ_;
-            float l_free_;
+            float l_occ_, l_free_;
             int alpha_;
-            double laser_dx_;
-            double laser_dy_;
-            double laser_dtheta_;
+            double laser_dx_, laser_dy_, laser_dtheta_;
 
 
             void rayCast(OccupancyGridMap& map,
