@@ -8,7 +8,7 @@ struct Particle {
     double x     = 0.0;
     double y     = 0.0;
     double theta = 0.0;
-    double w     = 1.0;
+    double w     = 0.0;
     OccupancyGridMap map;
     Particle(MapParams params) : map(params) {}
     explicit Particle(double x, double y, double theta, const MapParams& params = MapParams{}) : 
