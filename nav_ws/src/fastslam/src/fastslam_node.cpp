@@ -17,6 +17,7 @@
 #include "fastslam/scan_integrator.hpp"
 #include "fastslam/particle.hpp"
 #include "fastslam/motion_model.hpp"
+#include "fastslam/pose.hpp"
 
 
 
@@ -219,13 +220,16 @@ namespace fastslam {
                     if (!best_particle || particle.w > best_particle->w) {
                         best_particle = &particle;
                     }
-                    integrator_.integrateScan(particle.map, scan, particle.x, particle.y, particle.theta);
                 }
 
                 calculateOdomTf(best_particle);
                 RCLCPP_INFO(this->get_logger(), "Best particle weight: %.6f", best_particle->w);
                 RCLCPP_INFO(this->get_logger(), "Total weight in system: %.6f", total_weight);
                 resample(total_weight);
+                for (Particle& particle : particles_) {
+                    // better performance to integrate scan after resampling || OR DOES IT...
+                    integrator_.integrateScan(particle.map, scan, particle.x, particle.y, particle.theta);
+                }
                 publishMap(*best_particle);
                 publishParticles();
                 last_scan_pose_ = prev_pose_;

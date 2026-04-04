@@ -31,16 +31,31 @@ add_executable(fastslam_node
   src/particle.cpp
 )
 
-
-target_include_directories(fastslam_node PUBLIC
-  include
-  ${OpenCV_INCLUDE_DIRS}
+add_executable(fastslam2_node
+  src/fastslam2_node.cpp
+  src/occupancy_grid_map.cpp
+  src/scan_integrator.cpp
+  src/motion_model.cpp
+  src/particle.cpp
+  src/scan_matcher.cpp
 )
 
 target_include_directories(mapper_test_node PUBLIC
   include
   ${OpenCV_INCLUDE_DIRS}
 )
+
+target_include_directories(fastslam_node PUBLIC
+  include
+  ${OpenCV_INCLUDE_DIRS}
+)
+
+target_include_directories(fastslam2_node PUBLIC
+  include
+  ${OpenCV_INCLUDE_DIRS}
+)
+
+
 
 ament_target_dependencies(mapper_test_node
   rclcpp
@@ -60,6 +75,15 @@ ament_target_dependencies(fastslam_node
   tf2_ros
 )
 
+ament_target_dependencies(fastslam2_node
+  rclcpp
+  sensor_msgs
+  nav_msgs
+  geometry_msgs
+  tf2
+  tf2_ros
+)
+
 
 target_link_libraries(mapper_test_node
   ${OpenCV_LIBS}
@@ -69,12 +93,20 @@ target_link_libraries(fastslam_node
   ${OpenCV_LIBS}
 )
 
+target_link_libraries(fastslam2_node
+  ${OpenCV_LIBS}
+)
+
 
 install(TARGETS mapper_test_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
 install(TARGETS fastslam_node
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+install(TARGETS fastslam2_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
