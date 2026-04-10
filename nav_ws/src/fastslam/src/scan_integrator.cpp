@@ -7,15 +7,6 @@ static int getSign(float x) {
 }
 namespace fastslam 
 {
-    ScanIntegrator::ScanIntegrator(float l_occ, float l_free, int alpha,
-        double laser_dx, double laser_dy, double laser_dtheta)
-        : l_occ_(l_occ)
-        , l_free_(l_free)
-        , alpha_(alpha)
-        , laser_dx_(laser_dx)
-        , laser_dy_(laser_dy)
-        , laser_dtheta_(laser_dtheta)
-    {}
 
     void ScanIntegrator::integrateScan(
         OccupancyGridMap& occupancy_grid,
@@ -30,7 +21,7 @@ namespace fastslam
 
         auto [scan_x_grid, scan_y_grid] = occupancy_grid.worldToGridCoordsExact(scan_x, scan_y);
         float ray_ang;
-        for (int i = 0; i < scan.ranges.size(); i+=2) {
+        for (int i = 0; i < scan.ranges.size(); i+=ray_skip_) {
             if (scan.ranges[i] < scan.range_min || scan.ranges[i] > scan.range_max) continue;
             ray_ang = static_cast<float>(scan_theta + (scan.angle_min + scan.angle_increment*i));
             while (ray_ang > M_PI) ray_ang -= 2*M_PI;
