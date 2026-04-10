@@ -43,7 +43,7 @@ import omni.graph.core as og
 
 
 class LaunchSim(): 
-    ENV_URL = "/home/harry/dev/nav_isaacsim/world/simple_obstacles.usd"
+    ENV_URL = "/home/harry/dev/nav_isaacsim/world/office.usd"
     
     def __init__(self):
         self._world = None

@@ -1,0 +1,11 @@
+{
+    "version": "1.0",
+    "file_records": [
+        {
+            "source_url": "/home/harry/dev/nav_isaacsim/vehicle/wheel_material.usd",
+            "source_hash": "7792b1b41d2dac529e6344b1a6ad8e3cf78dfb8e",
+            "target_url": "./wheel_material.usd",
+            "target_hash": "ea1def63edb935c99adc1a364c46c11b59000c14"
+        }
+    ]
+}

@@ -1,10 +1,11 @@
 # Editor
 .vscode/
 
-# External repos - not your code
+# External repos
 navigation2/
 slam_toolbox/
 turtlebot3/
+openslam_gmapping/
 
 # ROS build artifacts (colcon)
 nav_ws/build/
@@ -25,3 +26,6 @@ __pycache__/
 # Map serialization artifacts (regenerated at runtime)
 *.data
 *.posegraph
+
+# 3d model 
+*.stl
