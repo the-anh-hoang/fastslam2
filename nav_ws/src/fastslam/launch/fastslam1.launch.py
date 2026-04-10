@@ -10,8 +10,8 @@ def generate_launch_description():
     return LaunchDescription([
         Node(
             package='fastslam',
-            executable='fastslam_node',
-            name='fastslam_node',
+            executable='fastslam2_node',
+            name='fastslam2_node',
             parameters=[os.path.join(
                 get_package_share_directory('fastslam'),
                 'config', 'fastslam_params.yaml'
