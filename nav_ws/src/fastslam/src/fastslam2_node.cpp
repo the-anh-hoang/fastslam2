@@ -37,7 +37,7 @@ namespace fastslam {
             this->declare_parameter("a4", 0.01);
             this->declare_parameter("scan_match_x_range", 0.09); 
             this->declare_parameter("scan_match_y_range", 0.09);
-            this->declare_parameter("scan_match_theta_range", M_PI/4);
+            this->declare_parameter("scan_match_theta_range", M_PI/4); // quite excessive
             this->declare_parameter("scan_match_step_xy", 0.03); 
             this->declare_parameter("scan_match_step_theta", 0.02);
             this->declare_parameter("ray_skip", 5); 
@@ -99,7 +99,12 @@ namespace fastslam {
                 this->get_parameter("z_rand").as_double()
 
             );
-
+            integrator_ = ScanIntegrator(
+                0.7f, -0.7f, 1,
+                laser_dx, laser_dy, laser_dtheta,
+                this->get_parameter("ray_skip").as_int()
+            );
+            
             linear_update_ = this->get_parameter("linear_update").as_double();
             angular_update_ = this->get_parameter("angular_update").as_double();
 
@@ -109,7 +114,7 @@ namespace fastslam {
             
             MapParams mp(map_width, map_height, map_res); 
             particles_ = std::vector<Particle>(num_particles_, Particle(mp)); 
-            integrator_ = ScanIntegrator(0.7f, -0.7f, 1, laser_dx, laser_dy, laser_dtheta);
+            
 
             odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
                 "/odom",

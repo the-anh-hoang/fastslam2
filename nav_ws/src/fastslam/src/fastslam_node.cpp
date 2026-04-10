@@ -62,7 +62,7 @@ namespace fastslam {
 
             md_ = MotionModel(a1_, a2_, a3_, a4_);
             particles_ = std::vector<Particle>(num_particles_, Particle(mp)); 
-            integrator_ = ScanIntegrator(0.7f, -0.7f, 1, -0.064, 0.0, 0.0);
+            integrator_ = ScanIntegrator(0.7f, -0.7f, 1, -0.064, 0.0, 0.0, 1);
 
             odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
                 "/odom",
@@ -263,7 +263,8 @@ namespace fastslam {
                 pz += z_hit_ *  (std::exp(-(dist*dist)/ (2*(std_hit_*std_hit_))));
                 pz += z_rand_*p_rand_; 
                 assert(pz <= 1.0);
-                assert(pz >= 0.0); 
+                assert(pz >= 0.0);
+                // MAJOR CRE: Nav2 AMCL. this works better than logp with particle weights more spaced out.  
                 q += pz*pz*pz; 
             }
             return q; 
