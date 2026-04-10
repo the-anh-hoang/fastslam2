@@ -15,7 +15,7 @@ class MapperTestNode : public rclcpp::Node {
 public:
     MapperTestNode() : Node("mapper_test_node")
     , map_(fastslam::MapParams{})
-    , integrator_(0.7f, -0.7f, 1, 0.0, 0.0, 0.0)  // zero laser offset
+    , integrator_(0.7f, -0.7f, 1, 0.0, 0.0, 0.0, 1)  // zero laser offset
     {
         scan_sub_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
             "/scan", 10,
