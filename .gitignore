@@ -8,12 +8,12 @@ turtlebot3/
 openslam_gmapping/
 
 # ROS build artifacts (colcon)
-nav_ws/build/
-nav_ws/install/
-nav_ws/log/
-nav_ws/src/build/
-nav_ws/src/install/
-nav_ws/src/log/
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+ros2_ws/src/build/
+ros2_ws/src/install/
+ros2_ws/src/log/
 
 # Python
 __pycache__/

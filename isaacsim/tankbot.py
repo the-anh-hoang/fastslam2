@@ -25,7 +25,7 @@ import rclpy
 
 
 class Tankbot():
-    USD_PATH = "/home/harry/dev/nav_isaacsim/vehicle/turtlebot_3_flattened.usd"
+    USD_PATH = "/home/harry/dev/slam_isaacsim/vehicle/turtlebot_3_flattened.usd"
     WHEEL_RADIUS = 0.033
     WHEEL_BASE = 0.287
     def __init__(self, world_path, name) -> None:

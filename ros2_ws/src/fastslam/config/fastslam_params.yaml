@@ -4,6 +4,7 @@ fastslam_node:
     map_width: 500
     map_height: 500
     map_res: 0.05
+    ray_skip: 5
     a1: 0.05
     a2: 0.01
     a3: 0.01
@@ -19,10 +20,10 @@ fastslam_node:
 fastslam2_node:
   ros__parameters:
     num_particles: 3
-    map_width: 800
-    map_height: 5000
-    map_res: 0.05
-    ray_skip: 10
+    map_width: 1000
+    map_height: 1000
+    map_res: 0.02
+    ray_skip: 5
     a1: 0.05
     a2: 0.01
     a3: 0.01
@@ -35,7 +36,7 @@ fastslam2_node:
     z_hit: 0.80
     std_hit: 0.2
     z_rand: 0.2
-    linear_update: 0.5
+    linear_update: 0.1
     angular_update: 0.2
     resample_threshold: 0.5
     use_sim_time: true 

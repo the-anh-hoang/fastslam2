@@ -16,6 +16,5 @@ def generate_launch_description():
                 get_package_share_directory('fastslam'),
                 'config', 'fastslam_params.yaml'
             )]
-            # abs path: /home/harry/dev/nav_isaacsim/nav_ws/src/fastslam/config/fastslam_params.yaml
         )
     ])
