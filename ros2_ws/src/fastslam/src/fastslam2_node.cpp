@@ -1,6 +1,8 @@
-#include <vector> 
-#include <random> 
-#include <cmath> 
+#include <vector>
+#include <random>
+#include <cmath>
+#include <chrono>
+#include <omp.h>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/laser_scan.hpp> 
 #include <nav_msgs/msg/occupancy_grid.hpp>
@@ -247,41 +249,56 @@ namespace fastslam {
             if (delta_dist < linear_update_ && delta_rot < angular_update_) return;
             
             
-            ScanMatchResult smr; 
-            double L[9]; // cholesky decomposite 
-            // TODO: MISSING FAILURE CASE. MIGHT BE WHY PARTICLES EXPLODING? 
+            using Ms = std::chrono::duration<double, std::milli>;
+            auto t_cb_start = std::chrono::steady_clock::now();
+            double t_match_ms = 0, t_sample_ms = 0, t_integrate_ms = 0;
+
+            // Pre-generate random normals — std::mt19937 is not thread-safe
+            std::vector<double> randoms(num_particles_ * 3);
+            for (int j = 0; j < num_particles_ * 3; j++) randoms[j] = std_normal_(gen_);
+
+            // TODO: MISSING FAILURE CASE, USEFUL WHEN SCAN MATCH BAD
             double total_weight = 0.0;
             Particle* best_particle = nullptr;
-            for (Particle& particle : particles_) {
-                
+
+            #pragma omp parallel for reduction(+:total_weight,t_match_ms,t_sample_ms,t_integrate_ms) schedule(static)
+            for (int i = 0; i < num_particles_; i++) {
+                Particle& particle = particles_[i];
+                ScanMatchResult smr;
+                double L[9];
+
                 // scan matching
+                auto t0 = std::chrono::steady_clock::now();
                 smr = scan_matcher_.matchScan(particle, scan); // x't(i)
+                t_match_ms += Ms(std::chrono::steady_clock::now() - t0).count();
                 double best_x = smr.best_pose.x;
                 double best_y = smr.best_pose.y;
                 double best_theta = smr.best_pose.theta; 
                 
-                // -- SAMPLE AROUND THE MODE -- 
+                // -- SAMPLE AROUND THE MODE --
+                auto t1 = std::chrono::steady_clock::now();
                 std::vector<Pose> poses_sampled; poses_sampled.reserve(500);
-                std::vector<double> log_weights; log_weights.reserve(500); 
+                std::vector<double> log_weights; log_weights.reserve(500);
                 double lmax = -std::numeric_limits<double>::infinity();
-                double log_p_zt_xt, log_p_xt_ut; 
+                double log_p_zt_xt, log_p_xt_ut;
                 double dx, dy, dtheta, drho;
                 for (double x = best_x-0.01; x < best_x+0.011; x+=0.01) {
                     for (double y = best_y-0.01; y < best_y+0.011; y+=0.01) {
                         for (double theta = best_theta-0.005; theta < best_theta+0.0051; theta+=0.0025) {
-                            dx = x - particle.x; 
+                            dx = x - particle.x;
                             dy = y - particle.y;
                             dtheta = std::atan2(std::sin(theta - particle.theta), std::cos(theta - particle.theta));
                             drho = dx*dx + dy*dy;
-                            log_p_zt_xt = scan_matcher_.computeLikelihood(particle.map, x, y, theta, scan); 
+                            log_p_zt_xt = scan_matcher_.computeLikelihood(particle.map, x, y, theta, scan);
                             log_p_xt_ut = -0.1 * drho - 0.1 * dtheta * dtheta; // p(xt|xt-1,ut)
                             double lw = log_p_zt_xt + log_p_xt_ut;
-                            poses_sampled.push_back(Pose(x,y,std::remainder(theta, 2.0*M_PI))); 
+                            poses_sampled.push_back(Pose(x,y,std::remainder(theta, 2.0*M_PI)));
                             log_weights.push_back(lw);
                             if (lw > lmax) lmax = lw;
                         }
                     }
                 }
+                t_sample_ms += Ms(std::chrono::steady_clock::now() - t1).count();
 
                 // -- Computing the GAUSSIAN PROPOSAL -- 
 
@@ -342,9 +359,9 @@ namespace fastslam {
                 L[6] = cov[6] / L[0];
                 L[7] = (cov[7] - L[6]*L[3]) / L[4];
                 L[8] = std::sqrt(cov[8] - L[6]*L[6] - L[7]*L[7]);
-                double z0 = std_normal_(gen_);
-                double z1 = std_normal_(gen_);
-                double z2 = std_normal_(gen_);
+                double z0 = randoms[i*3];
+                double z1 = randoms[i*3 + 1];
+                double z2 = randoms[i*3 + 2];
 
                 double sampled_x = mean_pose.x + L[0]*z0; 
                 double sampled_y = mean_pose.y + L[3]*z0 + L[4]*z1;
@@ -355,32 +372,46 @@ namespace fastslam {
                 // mathematically correct?? 
                 particle.w += std::log(normalizing_term) + lmax;
                 
-                RCLCPP_INFO(this->get_logger(), "Scan match: mean=(%.3f,%.3f,%.3f) best=(%.3f,%.3f,%.3f)", 
-                    mean_pose.x, mean_pose.y, mean_pose.theta,
-                    smr.best_pose.x, smr.best_pose.y, smr.best_pose.theta);
-                RCLCPP_INFO(this->get_logger(), "-----------------------------");
-                RCLCPP_INFO(this->get_logger(), "Total region weight: %.6f", normalizing_term);
-                RCLCPP_INFO(this->get_logger(), "Particle pose: (%.3f,%.3f,%.3f)", particle.x, particle.y, particle.theta);
-                RCLCPP_INFO(this->get_logger(), "Scan match best: (%.3f,%.3f,%.3f) ll=%.3f", best_x, best_y, best_theta, smr.best_likelihood);
-                RCLCPP_INFO(this->get_logger(), "lmax=%.3f, normalizing_term=%.6f, exp(log(tw)+lmax)=%.10f", lmax, normalizing_term, std::exp(std::log(normalizing_term) + lmax));
-                RCLCPP_INFO(this->get_logger(), "Mean: (%.3f,%.3f,%.3f)", mean_pose.x, mean_pose.y, mean_pose.theta);
-                RCLCPP_INFO(this->get_logger(), "Cov diag: %.8f %.8f %.8f", cov[0], cov[4], cov[8]);
-                RCLCPP_INFO(this->get_logger(), "Sampled pose: (%.3f,%.3f,%.3f)", sampled_x, sampled_y, sampled_theta);
-                RCLCPP_INFO(this->get_logger(), "Particle Weight: %.10f", particle.w);
-                if (!best_particle || best_particle->w < particle.w) best_particle = &particle;
-                integrator_.integrateScan(particle.map, scan, particle.x, particle.y, particle.theta);                 
-                total_weight += particle.w; 
+                // RCLCPP_INFO(this->get_logger(), "Scan match: mean=(%.3f,%.3f,%.3f) best=(%.3f,%.3f,%.3f)",
+                //     mean_pose.x, mean_pose.y, mean_pose.theta,
+                //     smr.best_pose.x, smr.best_pose.y, smr.best_pose.theta);
+                // RCLCPP_INFO(this->get_logger(), "-----------------------------");
+                // RCLCPP_INFO(this->get_logger(), "Total region weight: %.6f", normalizing_term);
+                // RCLCPP_INFO(this->get_logger(), "Particle pose: (%.3f,%.3f,%.3f)", particle.x, particle.y, particle.theta);
+                // RCLCPP_INFO(this->get_logger(), "Scan match best: (%.3f,%.3f,%.3f) ll=%.3f", best_x, best_y, best_theta, smr.best_likelihood);
+                // RCLCPP_INFO(this->get_logger(), "lmax=%.3f, normalizing_term=%.6f, exp(log(tw)+lmax)=%.10f", lmax, normalizing_term, std::exp(std::log(normalizing_term) + lmax));
+                // RCLCPP_INFO(this->get_logger(), "Mean: (%.3f,%.3f,%.3f)", mean_pose.x, mean_pose.y, mean_pose.theta);
+                // RCLCPP_INFO(this->get_logger(), "Cov diag: %.8f %.8f %.8f", cov[0], cov[4], cov[8]);
+                // RCLCPP_INFO(this->get_logger(), "Sampled pose: (%.3f,%.3f,%.3f)", sampled_x, sampled_y, sampled_theta);
+                // RCLCPP_INFO(this->get_logger(), "Particle Weight: %.10f", particle.w);
+                auto t2 = std::chrono::steady_clock::now();
+                integrator_.integrateScan(particle.map, scan, particle.x, particle.y, particle.theta);
+                t_integrate_ms += Ms(std::chrono::steady_clock::now() - t2).count();
+                total_weight += particle.w;
             }
-            RCLCPP_INFO(this->get_logger(), "Best particle weight: %.6f", best_particle->w);
-            RCLCPP_INFO(this->get_logger(), "Total weight in system: %.6f", total_weight);
-            RCLCPP_INFO(this->get_logger(), "======================================");
-            RCLCPP_INFO(this->get_logger(), "======================================");
-            RCLCPP_INFO(this->get_logger(), "======================================");
+            best_particle = &*std::max_element(particles_.begin(), particles_.end(),
+                [](const Particle& a, const Particle& b) { return a.w < b.w; });
+            // RCLCPP_INFO(this->get_logger(), "Best particle weight: %.6f", best_particle->w);
+            // RCLCPP_INFO(this->get_logger(), "Total weight in system: %.6f", total_weight);
+
             calculateOdomTf(best_particle);
+
+            auto t_resample = std::chrono::steady_clock::now();
             resample();
+            double t_resample_ms = Ms(std::chrono::steady_clock::now() - t_resample).count();
+
+            auto t_publish = std::chrono::steady_clock::now();
             publishMap(*best_particle);
+            double t_publish_ms = Ms(std::chrono::steady_clock::now() - t_publish).count();
+
             publishParticles();
             last_scan_pose_ = prev_pose_;
+
+            double t_total_ms = Ms(std::chrono::steady_clock::now() - t_cb_start).count();
+            RCLCPP_INFO(this->get_logger(),
+                "[TIMING] total=%.1fms | matchScan=%.1fms | sampling=%.1fms | integrate=%.1fms | resample=%.1fms | publishMap=%.1fms",
+                t_total_ms, t_match_ms, t_sample_ms, t_integrate_ms, t_resample_ms, t_publish_ms);
+            RCLCPP_INFO(this->get_logger(), "======================================");
             
 
         }
@@ -404,7 +435,7 @@ namespace fastslam {
             double sum_sq = 0.0;
             for (int i = 0; i < num_particles_; i++) sum_sq += linear_w[i] * linear_w[i];
             double n_eff = 1.0 / sum_sq;
-            RCLCPP_INFO(this->get_logger(), "N_eff: %.1f / %d", n_eff, num_particles_);
+            // RCLCPP_INFO(this->get_logger(), "N_eff: %.1f / %d", n_eff, num_particles_);
             if (n_eff >= resample_threshold_ * num_particles_) return;
 
             std::vector<double> cdf(num_particles_);
@@ -427,7 +458,7 @@ namespace fastslam {
                 Xt.back().w = 0.0; 
             }
             particles_ = Xt;
-            RCLCPP_INFO(this->get_logger(), "Resampled particles");
+            // RCLCPP_INFO(this->get_logger(), "Resampled particles");
         }
 
 
