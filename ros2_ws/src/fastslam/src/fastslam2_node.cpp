@@ -126,8 +126,8 @@ namespace fastslam {
                 10,
                 std::bind(&FastSlam2Node::scanCallback, this, std::placeholders::_1)
             ); 
-
-            map_pub_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>("/map", 10);
+            auto map_qos = rclcpp::QoS(1).transient_local().reliable();
+            map_pub_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>("/map", map_qos);
             particles_pub_ = this->create_publisher<geometry_msgs::msg::PoseArray>(
                 "/particles", 10
             );
