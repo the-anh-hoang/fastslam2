@@ -30,8 +30,7 @@ namespace fastslam {
         FastSlam2Node() : Node("fastslam2_node"), gen_(rd_()) {
             // params 
             this->declare_parameter("num_particles", 3);
-            this->declare_parameter("map_width", 1000); 
-            this->declare_parameter("map_height", 1000);
+            this->declare_parameter("map_chunk_size", 24.0f); 
             this->declare_parameter("map_res", 0.03f); // (m/cell)
             this->declare_parameter("a1", 0.01);
             this->declare_parameter("a2", 0.01);
@@ -53,10 +52,9 @@ namespace fastslam {
 
             num_particles_ = this->get_parameter("num_particles").as_int();
 
-            int map_width = this->get_parameter("map_width").as_int();
-            int map_height = this->get_parameter("map_height").as_int();
+            float map_chunk_size = static_cast<float>(this->get_parameter("map_chunk_size").as_double()); 
             float map_res = static_cast<float>(this->get_parameter("map_res").as_double()); 
-
+            MapParams mp(map_chunk_size, map_res);
             md_ = MotionModel(
                 this->get_parameter("a1").as_double(),
                 this->get_parameter("a2").as_double(),            
@@ -114,7 +112,7 @@ namespace fastslam {
             RCLCPP_INFO(this->get_logger(), "num_particles: %d", num_particles_);
             RCLCPP_INFO(this->get_logger(), "linear_update: %.2f", linear_update_);
             
-            MapParams mp(map_width, map_height, map_res); 
+             
             particles_ = std::vector<Particle>(num_particles_, Particle(mp)); 
             
 
@@ -308,7 +306,7 @@ namespace fastslam {
                 std::vector<double> xj_probs; 
                 xj_probs.reserve(poses_sampled.size()); 
                 double total_sin = 0, total_cos = 0;
-                for (int i = 0; i < poses_sampled.size(); i++) {
+                for (size_t i = 0; i < poses_sampled.size(); i++) {
                     double p = std::exp(log_weights[i] - lmax); 
                     xj_probs.push_back(p);
                     mean_pose.x += p*poses_sampled[i].x;
@@ -330,7 +328,7 @@ namespace fastslam {
                 };
 
                 
-                for (int i = 0; i < poses_sampled.size(); i++) {
+                for (size_t i = 0; i < poses_sampled.size(); i++) {
                     dx = poses_sampled[i].x - mean_pose.x;
                     dy = poses_sampled[i].y - mean_pose.y;
                     dtheta = std::atan2(
@@ -517,14 +515,15 @@ namespace fastslam {
             auto map_meta_data = nav_msgs::msg::MapMetaData(); 
             header.stamp = this->now();
             header.frame_id = "map";
-            fastslam::MapParams map_params = p.map.getMapParams(); 
+            MapParams map_params = p.map.getMapParams(); 
+            ROSMsg map_ros_msg = p.map.toROSData();
             map_meta_data.map_load_time.sec = 0;
             map_meta_data.map_load_time.nanosec = 0;
             map_meta_data.resolution = map_params.resolution;
-            map_meta_data.width = map_params.width;
-            map_meta_data.height = map_params.height;
-            map_meta_data.origin.position.x = map_params.origin_x;
-            map_meta_data.origin.position.y = map_params.origin_y;
+            map_meta_data.width = map_ros_msg.width;
+            map_meta_data.height = map_ros_msg.height;
+            map_meta_data.origin.position.x = map_ros_msg.origin_x;
+            map_meta_data.origin.position.y = map_ros_msg.origin_y;
             map_meta_data.origin.position.z = 0.0;
             map_meta_data.origin.orientation.x = 0; 
             map_meta_data.origin.orientation.y = 0; 
@@ -533,7 +532,7 @@ namespace fastslam {
 
             map_msg.header = header; 
             map_msg.info = map_meta_data;
-            map_msg.data = p.map.toROSData();
+            map_msg.data = map_ros_msg.data;
             map_pub_->publish(map_msg); 
         }
 

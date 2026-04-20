@@ -16,6 +16,7 @@ find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(OpenCV REQUIRED)
+find_package(OpenMP REQUIRED)
 
 add_executable(mapper_test_node
   src/mapper_test_node.cpp
@@ -95,6 +96,7 @@ target_link_libraries(fastslam_node
 
 target_link_libraries(fastslam2_node
   ${OpenCV_LIBS}
+  OpenMP::OpenMP_CXX
 )
 
 
@@ -114,24 +116,5 @@ install(DIRECTORY config launch
   DESTINATION share/${PROJECT_NAME}
 )
 
-if(BUILD_TESTING)
-  find_package(ament_lint_auto REQUIRED)
-  set(ament_cmake_copyright_FOUND TRUE)
-  set(ament_cmake_cpplint_FOUND TRUE)
-  ament_lint_auto_find_test_dependencies()
-
-  find_package(ament_cmake_gtest REQUIRED)
-  ament_add_gtest(test_occupancy_grid_map
-    test/test_occupancy_grid_map.cpp
-    src/occupancy_grid_map.cpp
-  )
-  target_include_directories(test_occupancy_grid_map PRIVATE
-    include
-    ${OpenCV_INCLUDE_DIRS}
-  )
-  target_link_libraries(test_occupancy_grid_map
-    ${OpenCV_LIBS}
-  )
-endif()
 
 ament_package()

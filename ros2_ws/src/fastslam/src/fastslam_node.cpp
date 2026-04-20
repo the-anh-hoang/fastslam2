@@ -27,6 +27,7 @@ namespace fastslam {
         FastSlamNode() : Node("fastslam_node"), gen_(rd_()) {
             // params 
             this->declare_parameter("num_particles", 20);
+             this->declare_parameter("map_chunk_size", 24.0f); 
             this->declare_parameter("map_width", 1000); 
             this->declare_parameter("map_height", 1000);
             this->declare_parameter("map_res", 0.03f); // (m/cell)
@@ -42,10 +43,9 @@ namespace fastslam {
             this->declare_parameter("resample_threshold", 0.5);
             
             num_particles_ = this->get_parameter("num_particles").as_int();
-            int map_width = this->get_parameter("map_width").as_int();
-            int map_height = this->get_parameter("map_height").as_int();
+            float map_chunk_size = static_cast<float>(this->get_parameter("map_chunk_size").as_double()); 
             float map_res = static_cast<float>(this->get_parameter("map_res").as_double()); 
-            MapParams mp(map_width, map_height, map_res); 
+            MapParams mp(map_chunk_size, map_res);
             a1_ = this->get_parameter("a1").as_double();
             a2_ = this->get_parameter("a2").as_double();            
             a3_ = this->get_parameter("a3").as_double();
@@ -363,13 +363,15 @@ namespace fastslam {
             header.stamp = this->now();
             header.frame_id = "map";
             fastslam::MapParams map_params = p.map.getMapParams(); 
+            fastslam::ROSMsg map_ros_msg = p.map.toROSData();
+
             map_meta_data.map_load_time.sec = 0;
             map_meta_data.map_load_time.nanosec = 0;
             map_meta_data.resolution = map_params.resolution;
-            map_meta_data.width = map_params.width;
-            map_meta_data.height = map_params.height;
-            map_meta_data.origin.position.x = map_params.origin_x;
-            map_meta_data.origin.position.y = map_params.origin_y;
+            map_meta_data.width = map_ros_msg.width;
+            map_meta_data.height = map_ros_msg.height;
+            map_meta_data.origin.position.x = map_ros_msg.origin_x;
+            map_meta_data.origin.position.y = map_ros_msg.origin_y;
             map_meta_data.origin.position.z = 0.0;
             map_meta_data.origin.orientation.x = 0; 
             map_meta_data.origin.orientation.y = 0; 
@@ -378,7 +380,7 @@ namespace fastslam {
 
             map_msg.header = header; 
             map_msg.info = map_meta_data;
-            map_msg.data = p.map.toROSData();
+            map_msg.data = map_ros_msg.data;
             map_pub_->publish(map_msg); 
         }
 

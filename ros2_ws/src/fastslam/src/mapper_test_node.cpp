@@ -70,7 +70,7 @@ private:
             double delta_dist = std::sqrt(dx*dx + dy*dy);
             double delta_angle = std::abs(robot_theta - prev_theta_);
 
-            // if (delta_dist < 0.5 && delta_angle < 0.436) return;
+            if (delta_dist < 0.1 && delta_angle < 0.03) return;
             if (delta_dist < 1) return;
 
             integrator_.integrateScan(map_, scan, robot_x, robot_y, robot_theta);
@@ -88,14 +88,15 @@ private:
         auto map_meta_data = nav_msgs::msg::MapMetaData(); 
         header.stamp = this->now();
         header.frame_id = "map";
+        ROSMsg map_ros_msg = map_.toROSData();
         fastslam::MapParams map_params = map_.getMapParams(); 
         map_meta_data.map_load_time.sec = 0;
         map_meta_data.map_load_time.nanosec = 0;
         map_meta_data.resolution = map_params.resolution;
-        map_meta_data.width = map_params.width;
-        map_meta_data.height = map_params.height;
-        map_meta_data.origin.position.x = map_params.origin_x;
-        map_meta_data.origin.position.y = map_params.origin_y;
+        map_meta_data.width = map_ros_msg.width;
+        map_meta_data.height = map_ros_msg.height;
+        map_meta_data.origin.position.x = map_ros_msg.origin_x;
+        map_meta_data.origin.position.y = map_ros_msg.origin_y;
         map_meta_data.origin.position.z = 0.0;
         map_meta_data.origin.orientation.x = 0; 
         map_meta_data.origin.orientation.y = 0; 
@@ -104,7 +105,7 @@ private:
 
         map_msg.header = header; 
         map_msg.info = map_meta_data;
-        map_msg.data = map_.toROSData();
+        map_msg.data = map_ros_msg.data;
         map_pub_->publish(map_msg); 
     }
 

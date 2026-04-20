@@ -51,7 +51,7 @@ namespace fastslam
         float dist_x = (rdx > 0) ? (1-r0_fract_x)*step_unit_x : r0_fract_x*step_unit_x;
         float dist_y = (rdy > 0) ? (1-r0_fract_y)*step_unit_y : r0_fract_y*step_unit_y;
         float dist_traversed = 0;
-        while (dist_traversed < range && map.inBounds(curr_x, curr_y)) {
+        while (dist_traversed < range) {
             map.accumulateLogOdds(curr_x, curr_y, l_free_); 
             if (dist_y < dist_x) {
                 curr_y += getSign(rdy);
@@ -67,9 +67,7 @@ namespace fastslam
         
         for (int dy = -alpha_; dy <= alpha_; dy++) {
             for (int dx = -alpha_; dx <= alpha_; dx++) {
-                if (map.inBounds(curr_x+dx, curr_y+dy)) {
-                    map.accumulateLogOdds(curr_x+dx, curr_y+dy, l_occ_); 
-                }
+                map.accumulateLogOdds(curr_x+dx, curr_y+dy, l_occ_); 
             }
         }
         

@@ -1,27 +1,39 @@
 #ifndef FASTSLAM_OCCUPANCY_GRID_MAP_HPP
 #define FASTSLAM_OCCUPANCY_GRID_MAP_HPP
-#include <vector>
+#include <unordered_map>
+#include <vector> 
 #include <cstdint>
+#include <opencv2/opencv.hpp> 
+#include "fastslam/occupancy_chunk.hpp"
 
 namespace fastslam 
 {
     struct MapParams {
-        int   width      = 1000;
-        int   height     = 1000;
+        float chunk_size_m = 24.0f; // m 
         float resolution = 0.03f;
+        int cells_per_side = static_cast<int>(chunk_size_m / resolution); 
         float origin_x;
         float origin_y;
         float l_min      = -4.6f;
         float l_max      =  4.6f;
 
-        MapParams() :   origin_x(-(width*resolution)/2.0f),
-                        origin_y(-(height*resolution)/2.0f) {}
+        MapParams() :   origin_x(-chunk_size_m/2.0f),
+                        origin_y(-chunk_size_m/2.0f) {}
                         
-        MapParams(int w, int h, float res) :
-            width(w), height(h), resolution(res),    
-            origin_x(-(width*resolution)/2.0f),
-            origin_y(-(height*resolution)/2.0f) 
+        MapParams(float chunk_size, float res) :
+            chunk_size_m(chunk_size), 
+            resolution(res),    
+            origin_x(-chunk_size_m/2.0f),
+            origin_y(-chunk_size_m/2.0f) 
             {}
+    };
+
+    struct ROSMsg {
+        std::vector<int8_t> data; 
+        float origin_x; 
+        float origin_y; 
+        int width;
+        int height;
     };
 
     class OccupancyGridMap {
@@ -45,24 +57,34 @@ namespace fastslam
             std::pair<double, double> worldToGridCoordsExact(double x, double y) const;
             
             // Convert cell x,y to  world coordiantes x,y 
-            std::pair<double, double> gridToWorldCoords(double x, double y) const;
+            std::pair<double, double> gridToWorldCoords(int x, int y) const;
             
             // Convert data_ from log odds to ROS OccupancyGrid message data
-            std::vector<int8_t> toROSData() const;
+            ROSMsg toROSData() const;
 
             MapParams getMapParams() const;
             
-            // check if cell coords x, y are in bounds
-            bool inBounds(int x, int y) const; 
+            
         
         private:
-            std::vector<float> data_;
-            std::vector<float> distance_map_;
+            std::unordered_map<int64_t, OccupancyChunk> chunks_; 
             MapParams map_params_;
+
+            cv::Mat dist_mat_;
             float max_dist_ = 0.0f; 
             bool distance_dirty_ = true;
+            int grid_origin_x_, grid_origin_y_;  
+            
+            void getMapBoundingBox(int& min_x, int& min_y, int& max_x, int& max_y) const;
 
+            static int64_t packKey(int cx, int cy);  
+            int chunkIndex(int cell) const; 
             // Compute distance map for likelihood sensor model
+
+
+            OccupancyChunk& getOrCreateChunk(int x, int y); 
+            const OccupancyChunk* findChunk(int x, int y) const; 
+            int localOffset(int cell) const; 
             void computeDistanceMap();
     };
 }
