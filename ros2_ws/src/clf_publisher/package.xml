@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>clf_publisher</name>
+  <version>0.0.1</version>
+  <description>Publishes CARMEN .clf log files as ROS2 LaserScan, Odometry, and TF</description>
+  <maintainer email="harry@todo.todo">Harry</maintainer>
+  <license>MIT</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
