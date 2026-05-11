@@ -85,7 +85,7 @@ namespace fastslam {
                 return; 
             }
             RCLCPP_INFO(this->get_logger(), "Laser TF: dx=%.4f dy=%.4f dtheta=%.4f", 
-                            laser_dx, laser_dy, laser_dtheta); // should be -0.064 0 0 
+                            laser_dx, laser_dy, laser_dtheta);
             scan_matcher_ = ScanMatcher(
                 this->get_parameter("ray_skip").as_int(),
                 laser_dx, laser_dy, laser_dtheta, 
@@ -165,8 +165,10 @@ namespace fastslam {
         double angular_update_;
         double resample_threshold_; 
 
-        
-
+        // Tracking
+        int scan_count_ = 0;
+        int resample_count_ = 0;
+        double total_distance_ = 0.0;
 
         rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
         rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_; 
@@ -215,6 +217,8 @@ namespace fastslam {
 
             if (delta_dist < linear_update_ && delta_rot < angular_update_) return;
 
+            total_distance_ += delta_dist;
+
             Pose sampled_pose;
             for (Particle& p : particles_) {
                 sampled_pose = md_.applyMotionModel(
@@ -246,49 +250,54 @@ namespace fastslam {
             double delta_rot = std::abs(prev_pose_.theta - last_scan_pose_.theta);
             if (delta_dist < linear_update_ && delta_rot < angular_update_) return;
             
+            scan_count_++;
             
             using Ms = std::chrono::duration<double, std::milli>;
             auto t_cb_start = std::chrono::steady_clock::now();
-            double t_match_ms = 0, t_sample_ms = 0, t_integrate_ms = 0;
 
             // Pre-generate random normals — std::mt19937 is not thread-safe
             std::vector<double> randoms(num_particles_ * 3);
             for (int j = 0; j < num_particles_ * 3; j++) randoms[j] = std_normal_(gen_);
 
-            // TODO: MISSING FAILURE CASE, USEFUL WHEN SCAN MATCH BAD
+            // Per-particle diagnostics
+            std::vector<double> particle_likelihoods(num_particles_);
+            std::vector<double> particle_eta(num_particles_);
+            std::vector<double> particle_cov_xx(num_particles_);
+            std::vector<double> particle_cov_yy(num_particles_);
+            std::vector<double> particle_cov_tt(num_particles_);
+            std::vector<double> particle_scan_match_ll(num_particles_);
+
             double total_weight = 0.0;
             Particle* best_particle = nullptr;
 
-            #pragma omp parallel for reduction(+:total_weight,t_match_ms,t_sample_ms,t_integrate_ms) schedule(static)
+            #pragma omp parallel for reduction(+:total_weight) schedule(static)
             for (int i = 0; i < num_particles_; i++) {
                 Particle& particle = particles_[i];
                 ScanMatchResult smr;
                 double L[9];
 
                 // scan matching
-                auto t0 = std::chrono::steady_clock::now();
-                smr = scan_matcher_.matchScan(particle, scan); // x't(i)
-                t_match_ms += Ms(std::chrono::steady_clock::now() - t0).count();
+                smr = scan_matcher_.matchScan(particle, scan);
                 double best_x = smr.best_pose.x;
                 double best_y = smr.best_pose.y;
-                double best_theta = smr.best_pose.theta; 
+                double best_theta = smr.best_pose.theta;
+                particle_scan_match_ll[i] = smr.best_likelihood;
                 
                 // -- SAMPLE AROUND THE MODE --
-                auto t1 = std::chrono::steady_clock::now();
                 std::vector<Pose> poses_sampled; poses_sampled.reserve(500);
                 std::vector<double> log_weights; log_weights.reserve(500);
                 double lmax = -std::numeric_limits<double>::infinity();
                 double log_p_zt_xt, log_p_xt_ut;
                 double dx, dy, dtheta, drho;
-                for (double x = best_x-0.01; x < best_x+0.011; x+=0.01) {
-                    for (double y = best_y-0.01; y < best_y+0.011; y+=0.01) {
+                for (double x = best_x-0.1; x < best_x+0.1; x+=0.02) {
+                    for (double y = best_y-0.1; y < best_y+0.1; y+=0.02) {
                         for (double theta = best_theta-0.005; theta < best_theta+0.0051; theta+=0.0025) {
                             dx = x - particle.x;
                             dy = y - particle.y;
                             dtheta = std::atan2(std::sin(theta - particle.theta), std::cos(theta - particle.theta));
                             drho = dx*dx + dy*dy;
                             log_p_zt_xt = scan_matcher_.computeLikelihood(particle.map, x, y, theta, scan);
-                            log_p_xt_ut = -0.1 * drho - 0.1 * dtheta * dtheta; // p(xt|xt-1,ut)
+                            log_p_xt_ut = -0.1 * drho - 0.1 * dtheta * dtheta;
                             double lw = log_p_zt_xt + log_p_xt_ut;
                             poses_sampled.push_back(Pose(x,y,std::remainder(theta, 2.0*M_PI)));
                             log_weights.push_back(lw);
@@ -296,11 +305,8 @@ namespace fastslam {
                         }
                     }
                 }
-                t_sample_ms += Ms(std::chrono::steady_clock::now() - t1).count();
 
                 // -- Computing the GAUSSIAN PROPOSAL -- 
-
-                // compute mean 
                 Pose mean_pose(0.0,0.0,0.0);
                 double normalizing_term = 0.0; 
                 std::vector<double> xj_probs; 
@@ -319,14 +325,8 @@ namespace fastslam {
                 mean_pose.x /= normalizing_term; mean_pose.y /= normalizing_term; 
                 mean_pose.theta = std::atan2(total_sin/normalizing_term, total_cos/normalizing_term); 
                 
-                // Colv Calculation 
-                std::array<double,9> cov = {
-                //  x y rot
-                    0,0,0,  // x
-                    0,0,0,  // y
-                    0,0,0   // rot 
-                };
-
+                // Covariance 
+                std::array<double,9> cov = {0,0,0, 0,0,0, 0,0,0};
                 
                 for (size_t i = 0; i < poses_sampled.size(); i++) {
                     dx = poses_sampled[i].x - mean_pose.x;
@@ -349,6 +349,11 @@ namespace fastslam {
                 for (int j = 0; j < 9; j++) cov[j] /= normalizing_term;
                 cov[0] += 1e-6; cov[4] += 1e-6; cov[8] += 1e-6;
                 
+                // Store diagnostics
+                particle_eta[i] = std::log(normalizing_term) + lmax;
+                particle_cov_xx[i] = cov[0];
+                particle_cov_yy[i] = cov[4];
+                particle_cov_tt[i] = cov[8];
                 
                 // -- SAMPLING NEW POSE (CHOLESKY) -- 
                 L[0] = std::sqrt(cov[0]);
@@ -367,57 +372,104 @@ namespace fastslam {
                 particle.x = sampled_x; 
                 particle.y = sampled_y;
                 particle.theta = sampled_theta;
-                // mathematically correct?? 
                 particle.w += std::log(normalizing_term) + lmax;
                 
-                // RCLCPP_INFO(this->get_logger(), "Scan match: mean=(%.3f,%.3f,%.3f) best=(%.3f,%.3f,%.3f)",
-                //     mean_pose.x, mean_pose.y, mean_pose.theta,
-                //     smr.best_pose.x, smr.best_pose.y, smr.best_pose.theta);
-                // RCLCPP_INFO(this->get_logger(), "-----------------------------");
-                // RCLCPP_INFO(this->get_logger(), "Total region weight: %.6f", normalizing_term);
-                // RCLCPP_INFO(this->get_logger(), "Particle pose: (%.3f,%.3f,%.3f)", particle.x, particle.y, particle.theta);
-                // RCLCPP_INFO(this->get_logger(), "Scan match best: (%.3f,%.3f,%.3f) ll=%.3f", best_x, best_y, best_theta, smr.best_likelihood);
-                // RCLCPP_INFO(this->get_logger(), "lmax=%.3f, normalizing_term=%.6f, exp(log(tw)+lmax)=%.10f", lmax, normalizing_term, std::exp(std::log(normalizing_term) + lmax));
-                // RCLCPP_INFO(this->get_logger(), "Mean: (%.3f,%.3f,%.3f)", mean_pose.x, mean_pose.y, mean_pose.theta);
-                // RCLCPP_INFO(this->get_logger(), "Cov diag: %.8f %.8f %.8f", cov[0], cov[4], cov[8]);
-                // RCLCPP_INFO(this->get_logger(), "Sampled pose: (%.3f,%.3f,%.3f)", sampled_x, sampled_y, sampled_theta);
-                // RCLCPP_INFO(this->get_logger(), "Particle Weight: %.10f", particle.w);
-                auto t2 = std::chrono::steady_clock::now();
                 integrator_.integrateScan(particle.map, scan, particle.x, particle.y, particle.theta);
-                t_integrate_ms += Ms(std::chrono::steady_clock::now() - t2).count();
                 total_weight += particle.w;
             }
             best_particle = &*std::max_element(particles_.begin(), particles_.end(),
                 [](const Particle& a, const Particle& b) { return a.w < b.w; });
-            // RCLCPP_INFO(this->get_logger(), "Best particle weight: %.6f", best_particle->w);
-            // RCLCPP_INFO(this->get_logger(), "Total weight in system: %.6f", total_weight);
 
             calculateOdomTf(best_particle);
 
-            auto t_resample = std::chrono::steady_clock::now();
-            resample();
-            double t_resample_ms = Ms(std::chrono::steady_clock::now() - t_resample).count();
+            // --- Compute N_eff before resampling ---
+            double max_w = -std::numeric_limits<double>::infinity();
+            for (const Particle& p : particles_) if (p.w > max_w) max_w = p.w;
+            
+            std::vector<double> normalized_w(num_particles_);
+            double sum_w = 0.0;
+            for (int i = 0; i < num_particles_; i++) {
+                normalized_w[i] = std::exp(particles_[i].w - max_w);
+                sum_w += normalized_w[i];
+            }
+            for (int i = 0; i < num_particles_; i++) normalized_w[i] /= sum_w;
+            
+            double sum_sq = 0.0;
+            for (int i = 0; i < num_particles_; i++) sum_sq += normalized_w[i] * normalized_w[i];
+            double n_eff = 1.0 / sum_sq;
+            double n_eff_ratio = n_eff / num_particles_;
 
-            auto t_publish = std::chrono::steady_clock::now();
+            // --- Particle spread (how far apart are the particles?) ---
+            double mean_x = 0, mean_y = 0;
+            for (const Particle& p : particles_) { mean_x += p.x; mean_y += p.y; }
+            mean_x /= num_particles_; mean_y /= num_particles_;
+            double spread = 0;
+            for (const Particle& p : particles_) {
+                double ddx = p.x - mean_x;
+                double ddy = p.y - mean_y;
+                spread += ddx*ddx + ddy*ddy;
+            }
+            spread = std::sqrt(spread / num_particles_);
+
+            // --- Scan match quality stats ---
+            double min_ll = *std::min_element(particle_scan_match_ll.begin(), particle_scan_match_ll.end());
+            double max_ll = *std::max_element(particle_scan_match_ll.begin(), particle_scan_match_ll.end());
+            double avg_ll = 0;
+            for (double ll : particle_scan_match_ll) avg_ll += ll;
+            avg_ll /= num_particles_;
+
+            // --- Average proposal covariance (how tight is the proposal?) ---
+            double avg_cov_xx = 0, avg_cov_yy = 0, avg_cov_tt = 0;
+            for (int i = 0; i < num_particles_; i++) {
+                avg_cov_xx += particle_cov_xx[i];
+                avg_cov_yy += particle_cov_yy[i];
+                avg_cov_tt += particle_cov_tt[i];
+            }
+            avg_cov_xx /= num_particles_;
+            avg_cov_yy /= num_particles_;
+            avg_cov_tt /= num_particles_;
+
+            // --- Weight distribution ---
+            double w_min = normalized_w[0], w_max = normalized_w[0];
+            for (int i = 1; i < num_particles_; i++) {
+                if (normalized_w[i] < w_min) w_min = normalized_w[i];
+                if (normalized_w[i] > w_max) w_max = normalized_w[i];
+            }
+
+            // --- Resample ---
+            bool did_resample = false;
+            if (n_eff < resample_threshold_ * num_particles_) {
+                resample();
+                did_resample = true;
+                resample_count_++;
+            }
+
             publishMap(*best_particle);
-            double t_publish_ms = Ms(std::chrono::steady_clock::now() - t_publish).count();
-
             publishParticles();
             last_scan_pose_ = prev_pose_;
 
             double t_total_ms = Ms(std::chrono::steady_clock::now() - t_cb_start).count();
-            RCLCPP_INFO(this->get_logger(),
-                "[TIMING] total=%.1fms | matchScan=%.1fms | sampling=%.1fms | integrate=%.1fms | resample=%.1fms | publishMap=%.1fms",
-                t_total_ms, t_match_ms, t_sample_ms, t_integrate_ms, t_resample_ms, t_publish_ms);
-            RCLCPP_INFO(this->get_logger(), "======================================");
-            
 
+            // === LOGGING ===
+            RCLCPP_INFO(this->get_logger(),
+                "[%d] %.1fms | dist=%.1fm | N_eff=%.1f/%d (%.0f%%) | spread=%.4fm | %s",
+                scan_count_, t_total_ms, total_distance_,
+                n_eff, num_particles_, n_eff_ratio * 100.0,
+                spread,
+                did_resample ? "RESAMPLED" : "");
+            RCLCPP_INFO(this->get_logger(),
+                "  scan_match: ll=[%.1f, %.1f, %.1f] | proposal_cov: σx=%.5f σy=%.5f σθ=%.5f",
+                min_ll, avg_ll, max_ll,
+                std::sqrt(avg_cov_xx), std::sqrt(avg_cov_yy), std::sqrt(avg_cov_tt));
+            RCLCPP_INFO(this->get_logger(),
+                "  weights: [%.4f, %.4f] | best=(%.2f,%.2f,%.2f) | resamples=%d/%d",
+                w_min, w_max,
+                best_particle->x, best_particle->y, best_particle->theta,
+                resample_count_, scan_count_);
         }
 
 
         void resample() {
-            
-            // N_eff = 1 / sum(w_i^2)
             double max_w = -std::numeric_limits<double>::infinity();
             for (const Particle& p : particles_) if (p.w > max_w) max_w = p.w;
 
@@ -430,12 +482,6 @@ namespace fastslam {
 
             for (int i = 0; i < num_particles_; i++) linear_w[i] /= sum_w;
 
-            double sum_sq = 0.0;
-            for (int i = 0; i < num_particles_; i++) sum_sq += linear_w[i] * linear_w[i];
-            double n_eff = 1.0 / sum_sq;
-            // RCLCPP_INFO(this->get_logger(), "N_eff: %.1f / %d", n_eff, num_particles_);
-            if (n_eff >= resample_threshold_ * num_particles_) return;
-
             std::vector<double> cdf(num_particles_);
             cdf[0] = linear_w[0];
             for (int i = 1; i < num_particles_; i++) {
@@ -443,7 +489,7 @@ namespace fastslam {
             }
 
             // Systematic resampler
-            std::vector<Particle> Xt;   // new set of samples 
+            std::vector<Particle> Xt;
             Xt.reserve(num_particles_); 
             std::uniform_real_distribution<double> start_point_dist(0, 1.0/num_particles_);
             double start_point = start_point_dist(gen_);
@@ -456,24 +502,20 @@ namespace fastslam {
                 Xt.back().w = 0.0; 
             }
             particles_ = Xt;
-            // RCLCPP_INFO(this->get_logger(), "Resampled particles");
         }
 
 
         void calculateOdomTf(Particle* p) { 
-            // map->odom = (map->p) * (odom->p)^-1
             geometry_msgs::msg::TransformStamped base_to_odom = tf_buffer_->lookupTransform(
-                "base_footprint", // source   
-                "odom", // target  
+                "base_footprint",
+                "odom",
                 tf2::TimePointZero,
                 std::chrono::milliseconds(100)
             ); 
-            // map->p
             double map_to_base_x = p->x;
             double map_to_base_y = p->y;
             double map_to_base_rot = p->theta;
 
-            // (odom->p)^-1
             double base_to_odom_x = base_to_odom.transform.translation.x;
             double base_to_odom_y = base_to_odom.transform.translation.y; 
             double base_to_odom_rot = quatToYaw(
@@ -483,7 +525,6 @@ namespace fastslam {
                 base_to_odom.transform.rotation.w
             );
 
-            //map->odom 
             double s = std::sin(map_to_base_rot);
             double c = std::cos(map_to_base_rot); 
             double map_to_odom_x = map_to_base_x + c*base_to_odom_x - s*base_to_odom_y;
@@ -504,7 +545,6 @@ namespace fastslam {
             map_odom_tf_.header.stamp = this->now(); 
             map_odom_pub_->sendTransform(map_odom_tf_); 
         }
-
 
 
         // ------------------ UTILS ------------------
@@ -550,7 +590,6 @@ namespace fastslam {
         }
 
         void publishParticles() {
-            // helper to visualize particles
             geometry_msgs::msg::PoseArray msg;
             msg.header.stamp = this->now();
             msg.header.frame_id = "map";
