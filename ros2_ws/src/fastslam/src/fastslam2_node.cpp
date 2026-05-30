@@ -3,7 +3,6 @@
 #include <cmath>
 #include <chrono>
 #include <omp.h>
-#include <fstream>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/laser_scan.hpp> 
 #include <nav_msgs/msg/occupancy_grid.hpp>
@@ -101,7 +100,7 @@ namespace fastslam {
 
             );
             integrator_ = ScanIntegrator(
-                0.7f, -0.7f, 1,
+                1.2f, -1.2f, 1,
                 laser_dx, laser_dy, laser_dtheta,
                 this->get_parameter("ray_skip").as_int()
             );
@@ -115,16 +114,6 @@ namespace fastslam {
             
              
             particles_ = std::vector<Particle>(num_particles_, Particle(mp)); 
-            csv_file_.open("diagnostics.csv");
-            csv_file_ << "scan_id,particle_id,"
-                    << "pre_motion_x,pre_motion_y,pre_motion_theta,"
-                    << "odom_pred_x,odom_pred_y,odom_pred_theta,"
-                    << "scan_match_x,scan_match_y,scan_match_theta,scan_match_ll,"
-                    << "proposal_mean_x,proposal_mean_y,proposal_mean_theta,"
-                    << "final_x,final_y,final_theta,"
-                    << "log_eta,weight,"
-                    << "cov_xx,cov_yy,cov_tt,"
-                    << "odom_raw_x,odom_raw_y,odom_raw_theta" << std::endl;
             
 
             odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
@@ -168,7 +157,6 @@ namespace fastslam {
 
         private:
 
-        std::ofstream csv_file_;
         std::vector<Pose> pre_motion_poses_;  // stored before motion model applies
 
         int num_particles_;
@@ -237,9 +225,10 @@ namespace fastslam {
             // just integrate first scan 
             if (!scan_initialized_) {
                 for (Particle& particle : particles_) {
-                    integrator_.integrateScan(particle.map, scan, particle.x, particle.y, particle.theta);                 
+                    integrator_.integrateScan(particle.map, scan, particle.x, particle.y, particle.theta, 1.5f, -1.5f);                 
                     scan_initialized_ = true;
                 }
+                publishMap(particles_[0]);
                 return;
             }
 
@@ -252,28 +241,28 @@ namespace fastslam {
             double dx = curr_x - prev_pose_.x;
             double dy = curr_y - prev_pose_.y;
             double delta_dist = std::sqrt(dx*dx + dy*dy);
-            double delta_rot = std::abs(prev_pose_.theta - curr_theta);
-            if (delta_dist < linear_update_ && delta_rot < angular_update_) return;
+            double delta_rot = prev_pose_.theta - curr_theta;
+            if (delta_dist < linear_update_ && std::abs(delta_rot) < angular_update_) return;
             
             total_distance_ += delta_dist;
             scan_count_++;
             
             // sample motion model
-            Pose sampled_pose;
-            for (Particle& p : particles_) {
-                sampled_pose = md_.applyMotionModel(
-                    Pose(p.x, p.y, p.theta),
-                    prev_pose_,
-                    curr_pose
-                );
-                p.x = sampled_pose.x;
-                p.y = sampled_pose.y;
-                p.theta = sampled_pose.theta; 
-            }
-            prev_pose_ = curr_pose; 
-            publishParticles(); 
-            
+            // Pose sampled_pose;
+            // for (Particle& p : particles_) {
+            //     sampled_pose = md_.applyMotionModel(
+            //         Pose(p.x, p.y, p.theta),
+            //         prev_pose_,
+            //         curr_pose
+            //     );
+            //     p.x = sampled_pose.x;
+            //     p.y = sampled_pose.y;
+            //     p.theta = sampled_pose.theta; 
+            // }
+            // prev_pose_ = curr_pose; 
+            // publishParticles(); 
 
+            // motion prediction based on odometry
             using Ms = std::chrono::duration<double, std::milli>;
             auto t_cb_start = std::chrono::steady_clock::now();
 
@@ -291,24 +280,28 @@ namespace fastslam {
 
             double total_weight = 0.0;
             Particle* best_particle = nullptr;
-
-
-            std::vector<double> csv_scan_match_x(num_particles_);
-            std::vector<double> csv_scan_match_y(num_particles_);
-            std::vector<double> csv_scan_match_theta(num_particles_);
-            std::vector<double> csv_proposal_mean_x(num_particles_);
-            std::vector<double> csv_proposal_mean_y(num_particles_);
-            std::vector<double> csv_proposal_mean_theta(num_particles_);
-            std::vector<double> csv_final_x(num_particles_);
-            std::vector<double> csv_final_y(num_particles_);
-            std::vector<double> csv_final_theta(num_particles_);
-            std::vector<double> csv_odom_pred_x(num_particles_);
-            std::vector<double> csv_odom_pred_y(num_particles_);
-            std::vector<double> csv_odom_pred_theta(num_particles_);
+            Pose odom_predicted_pose;
 
             #pragma omp parallel for reduction(+:total_weight) schedule(static)
             for (int i = 0; i < num_particles_; i++) {
                 Particle& particle = particles_[i];
+                // motion prediction based on odom
+                odom_predicted_pose = md_.applyMotionModel(
+                    Pose(particle.x, particle.y, particle.theta), 
+                    prev_pose_,
+                    curr_pose, 
+                    true
+                ); 
+                particle.x = odom_predicted_pose.x;
+                particle.y = odom_predicted_pose.y;
+                particle.theta = odom_predicted_pose.theta;
+                // RCLCPP_INFO(
+                //     this->get_logger(),
+                //     "Predicted pose -> x: %.3f, y: %.3f, theta: %.3f",
+                //     particle.x,
+                //     particle.y,
+                //     particle.theta
+                // );
                 ScanMatchResult smr;
                 double L[9];
 
@@ -318,13 +311,8 @@ namespace fastslam {
                 double best_y = smr.best_pose.y;
                 double best_theta = smr.best_pose.theta;
                 particle_scan_match_ll[i] = smr.best_likelihood;
-                csv_scan_match_x[i] = best_x;
-                csv_scan_match_y[i] = best_y;
-                csv_scan_match_theta[i] = best_theta;
-                csv_odom_pred_x[i] = particle.x;  // this IS the odom-predicted pose (motion model already applied)
-                csv_odom_pred_y[i] = particle.y;
-                csv_odom_pred_theta[i] = particle.theta;
-                
+                // TODO: MISSING CASE FOR FAILED SCAN MATCHER
+
                 // -- SAMPLE AROUND THE MODE --
                 std::vector<Pose> poses_sampled; poses_sampled.reserve(500);
                 std::vector<double> log_weights; log_weights.reserve(500);
@@ -339,7 +327,15 @@ namespace fastslam {
                             dtheta = std::atan2(std::sin(theta - particle.theta), std::cos(theta - particle.theta));
                             drho = dx*dx + dy*dy;
                             log_p_zt_xt = scan_matcher_.computeLikelihood(particle.map, x, y, theta, scan);
-                            log_p_xt_ut = -0.1  * drho - 0.1 * dtheta * dtheta;
+                            log_p_xt_ut = md_.evaluateLogMotionError(
+                                pre_motion_poses_[i],
+                                Pose(x, y, theta),
+                                Pose(particle.x, particle.y, particle.theta)
+                            );
+                            //  RCLCPP_INFO(this->get_logger(),
+                            //     "  scan_match_likelihood=%.05f | motion_likelihood=%.05f",
+                            //     log_p_zt_xt, log_p_xt_ut);
+                            // log_p_xt_ut = -0.1  * drho - 0.1 * dtheta * dtheta;
                             double lw = log_p_zt_xt + log_p_xt_ut;
                             poses_sampled.push_back(Pose(x,y,std::remainder(theta, 2.0*M_PI)));
                             log_weights.push_back(lw);
@@ -366,9 +362,7 @@ namespace fastslam {
 
                 mean_pose.x /= normalizing_term; mean_pose.y /= normalizing_term; 
                 mean_pose.theta = std::atan2(total_sin/normalizing_term, total_cos/normalizing_term); 
-                csv_proposal_mean_x[i] = mean_pose.x;
-                csv_proposal_mean_y[i] = mean_pose.y;
-                csv_proposal_mean_theta[i] = mean_pose.theta;
+
                 // Covariance 
                 std::array<double,9> cov = {0,0,0, 0,0,0, 0,0,0};
                 
@@ -418,11 +412,8 @@ namespace fastslam {
                 particle.y = sampled_y;
                 particle.theta = sampled_theta;
 
-                csv_final_x[i] = sampled_x;
-                csv_final_y[i] = sampled_y;
-                csv_final_theta[i] = sampled_theta;
                 particle.w += std::log(normalizing_term) + lmax;
-                
+                RCLCPP_INFO(this->get_logger(), "   Particle %d weight: %.00005f", i, particle.w);
                 integrator_.integrateScan(particle.map, scan, particle.x, particle.y, particle.theta);
                 total_weight += particle.w;
             }
@@ -430,6 +421,7 @@ namespace fastslam {
                 [](const Particle& a, const Particle& b) { return a.w < b.w; });
     
             calculateOdomTf(best_particle);
+            prev_pose_ = curr_pose; 
 
             // --- Compute N_eff before resampling ---
             double max_w = -std::numeric_limits<double>::infinity();
@@ -515,23 +507,6 @@ namespace fastslam {
                 w_min, w_max,
                 best_particle->x, best_particle->y, best_particle->theta,
                 resample_count_, scan_count_);
-            if (csv_file_.is_open()) {
-                for (int i = 0; i < num_particles_; i++) {
-                    Pose pre = (pre_motion_poses_.size() == (size_t)num_particles_) 
-                                ? pre_motion_poses_[i] 
-                                : Pose(0,0,0);
-                    csv_file_ << scan_count_ << "," << i << ","
-                            << pre.x << "," << pre.y << "," << pre.theta << ","
-                            << csv_odom_pred_x[i] << "," << csv_odom_pred_y[i] << "," << csv_odom_pred_theta[i] << ","
-                            << csv_scan_match_x[i] << "," << csv_scan_match_y[i] << "," << csv_scan_match_theta[i] << "," << particle_scan_match_ll[i] << ","
-                            << csv_proposal_mean_x[i] << "," << csv_proposal_mean_y[i] << "," << csv_proposal_mean_theta[i] << ","
-                            << csv_final_x[i] << "," << csv_final_y[i] << "," << csv_final_theta[i] << ","
-                            << particle_eta[i] << "," << particles_[i].w << ","
-                            << particle_cov_xx[i] << "," << particle_cov_yy[i] << "," << particle_cov_tt[i] << ","
-                            << prev_pose_.x << "," << prev_pose_.y << "," << prev_pose_.theta
-                            << std::endl;
-                    }
-            }
         }
 
 
