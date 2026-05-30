@@ -95,9 +95,9 @@ class ClfPublisher(Node):
 
                         offset = 2 + num_readings
                         # First triplet is corrected laser pose — skip it
-                        # laser_x = float(tokens[offset])
-                        # laser_y = float(tokens[offset + 1])
-                        # laser_theta = float(tokens[offset + 2])
+                        # robot_x = float(tokens[offset])
+                        # robot_y = float(tokens[offset + 1])
+                        # robot_theta = float(tokens[offset + 2])
                         # Second triplet is raw odometry — use this
                         robot_x = float(tokens[offset + 3])
                         robot_y = float(tokens[offset + 4])
@@ -110,7 +110,7 @@ class ClfPublisher(Node):
                             'start_angle': -math.pi / 2.0,
                             'fov': math.pi,
                             'angular_res': math.pi / num_readings,
-                            'max_range': 18.0,
+                            'max_range': 20.0,
                             'num_readings': num_readings,
                             'readings': readings,
                             'robot_x': robot_x,

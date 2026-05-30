@@ -9,7 +9,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(
             'clf_file',
-            default_value='/root/ros2_ws/datasets/fr079.clf',
+            default_value='datasets/aces.clf',
             description='Path to .clf dataset file'
         ),
         DeclareLaunchArgument(
@@ -38,7 +38,7 @@ def generate_launch_description():
             executable='fastslam2_node',
             name='fastslam2_node',
             parameters=[
-                os.path.join('/root/ros2_ws/src/fastslam/config', 'fastslam_params.yaml')
+                os.path.join('src/fastslam/config', 'fastslam_params.yaml')
             ],
             output='screen',
         ),
