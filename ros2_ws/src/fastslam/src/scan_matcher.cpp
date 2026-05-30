@@ -54,6 +54,7 @@ namespace fastslam
         double pz;
         double endpoint_x, endpoint_y;
         float dist; 
+        int i = 0;
         for (unsigned int k = 0; k < scan.ranges.size(); k += ray_skip_) {
             pz = 0.0;
             if (scan.ranges[k] < scan.range_min || scan.ranges[k] > scan.range_max) continue;
@@ -67,7 +68,8 @@ namespace fastslam
             assert(pz <= 1.0);
             assert(pz >= 0.0); 
             q += std::log(pz); 
+            i += 1;
         }
-        return q; 
+        return q/((double) i); 
     }
 }
