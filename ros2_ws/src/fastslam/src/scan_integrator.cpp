@@ -7,7 +7,6 @@ static int getSign(float x) {
 }
 namespace fastslam 
 {
-
     void ScanIntegrator::integrateScan(
         OccupancyGridMap& occupancy_grid,
         const sensor_msgs::msg::LaserScan& scan,
@@ -15,19 +14,31 @@ namespace fastslam
         double robot_y, 
         double robot_theta
     ) {
+        integrateScan(occupancy_grid, scan, robot_x, robot_y, robot_theta, l_occ_, l_free_);
+    }
+
+    void ScanIntegrator::integrateScan(
+        OccupancyGridMap& occupancy_grid,
+        const sensor_msgs::msg::LaserScan& scan,
+        double robot_x, 
+        double robot_y, 
+        double robot_theta,
+        double l_occ,
+        double l_free
+    ) {
         double scan_x = robot_x + laser_dx_*std::cos(robot_theta) - laser_dy_*std::sin(robot_theta);
         double scan_y = robot_y + laser_dx_*std::sin(robot_theta) + laser_dy_*std::cos(robot_theta);
         double scan_theta = robot_theta + laser_dtheta_;
 
         auto [scan_x_grid, scan_y_grid] = occupancy_grid.worldToGridCoordsExact(scan_x, scan_y);
         float ray_ang;
-        for (int i = 0; i < scan.ranges.size(); i+=ray_skip_) {
+        for (size_t i = 0; i < scan.ranges.size(); i+=ray_skip_) {
             if (scan.ranges[i] < scan.range_min || scan.ranges[i] > scan.range_max) continue;
             ray_ang = static_cast<float>(scan_theta + (scan.angle_min + scan.angle_increment*i));
             while (ray_ang > M_PI) ray_ang -= 2*M_PI;
             while (ray_ang < -M_PI) ray_ang += 2*M_PI;
             float range_cells = scan.ranges[i] / occupancy_grid.getMapParams().resolution; 
-            rayCast(occupancy_grid, scan_x_grid, scan_y_grid, ray_ang, range_cells);
+            rayCast(occupancy_grid, scan_x_grid, scan_y_grid, ray_ang, range_cells, l_occ, l_free);
         }
 
     }
@@ -35,7 +46,9 @@ namespace fastslam
     void ScanIntegrator::rayCast(OccupancyGridMap& map,
         double x0, double y0,
         float ray_angle, 
-        float range
+        float range,
+        double l_occ,
+        double l_free
     ) {
         float rdx = std::cos(ray_angle);
         float rdy = std::sin(ray_angle);
@@ -52,7 +65,7 @@ namespace fastslam
         float dist_y = (rdy > 0) ? (1-r0_fract_y)*step_unit_y : r0_fract_y*step_unit_y;
         float dist_traversed = 0;
         while (dist_traversed < range) {
-            map.accumulateLogOdds(curr_x, curr_y, l_free_); 
+            map.accumulateLogOdds(curr_x, curr_y, l_free); 
             if (dist_y < dist_x) {
                 curr_y += getSign(rdy);
                 dist_traversed = dist_y;
@@ -63,11 +76,12 @@ namespace fastslam
                 dist_x += step_unit_x;
             }
         }
+        // map.accumulateLogOdds(curr_x, curr_y, l_occ);
 
         
-        for (int dy = -alpha_; dy <= alpha_; dy++) {
-            for (int dx = -alpha_; dx <= alpha_; dx++) {
-                map.accumulateLogOdds(curr_x+dx, curr_y+dy, l_occ_); 
+        for (int dy = 0; dy <= alpha_; dy++) {
+            for (int dx = 0; dx <= alpha_; dx++) {
+                map.accumulateLogOdds(curr_x+dx, curr_y+dy, l_occ); 
             }
         }
         

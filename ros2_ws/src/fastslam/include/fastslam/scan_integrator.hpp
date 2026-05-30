@@ -23,9 +23,18 @@ namespace fastslam {
                 const sensor_msgs::msg::LaserScan& scan,
                 double robot_x,
                 double robot_y,
-                double robot_theta
+                double robot_theta,
+                double l_occ, 
+                double l_free 
             ); 
-        
+            
+            void integrateScan(
+                OccupancyGridMap& occupancy_grid,
+                const sensor_msgs::msg::LaserScan& scan,
+                double robot_x,
+                double robot_y,
+                double robot_theta
+            );
         private:
             float l_occ_, l_free_;
             int alpha_;
@@ -35,7 +44,9 @@ namespace fastslam {
             void rayCast(OccupancyGridMap& map,
                 double x0, double y0,
                 float ray_angle, 
-                float range
+                float range,
+                double l_occ,
+                double l_free 
             );  
     };
 
