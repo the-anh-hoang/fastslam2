@@ -31,17 +31,21 @@ namespace fastslam
     float OccupancyGridMap::distanceAt(int x, int y) {
         if (distance_dirty_) {
             computeDistanceMap();
-            distance_dirty_ = false; 
+            distance_dirty_ = false;
         }
+
+        float lo = getLogOdds(x, y);
+        if (lo == 0.0f) {
+            return max_dist_;
+        }
+
         int px = x - grid_origin_x_;
         int py = y - grid_origin_y_;
-        
+
         if (px < 0 || py < 0 || px >= dist_mat_.cols || py >= dist_mat_.rows) {
             return max_dist_;
         }
         return dist_mat_.at<float>(py, px) * map_params_.resolution;
-        
-       
     }
 
     std::pair<int, int> OccupancyGridMap::worldToGridCoords(double x, double y) const {
