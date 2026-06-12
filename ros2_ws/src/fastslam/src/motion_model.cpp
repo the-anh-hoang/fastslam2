@@ -5,6 +5,10 @@
 static double normalizeAngle(double angle) {
     return std::remainder(angle, 2.0 * M_PI);
 }
+static double foldRotation(double rot) {
+        return std::min(std::abs(normalizeAngle(rot)),
+                        std::abs(normalizeAngle(rot - M_PI)));
+}
 
 namespace fastslam 
 {
@@ -59,36 +63,53 @@ namespace fastslam
         return Pose(new_x, new_y, new_theta); 
     } 
 
+    
+
     double MotionModel::evaluateLogMotionError(Pose prev_pose, Pose candidate_pose, Pose odom_pred) {
+        // Odometry-predicted decomposition = the sampler's mean
         double hat_dx = odom_pred.x - prev_pose.x;
         double hat_dy = odom_pred.y - prev_pose.y;
         double hat_trans = std::sqrt(hat_dx*hat_dx + hat_dy*hat_dy);
-        double hat_rot1 = (hat_trans > 0.001) 
-            ? normalizeAngle(std::atan2(hat_dy, hat_dx) - prev_pose.theta) 
+        double hat_rot1 = (hat_trans > 0.001)
+            ? normalizeAngle(std::atan2(hat_dy, hat_dx) - prev_pose.theta)
             : 0.0;
         double hat_rot2 = normalizeAngle(odom_pred.theta - prev_pose.theta - hat_rot1);
 
+        // Variances from FOLDED rotations — must match applyMotionModel exactly
+        double r1n = foldRotation(hat_rot1);
+        double r2n = foldRotation(hat_rot2);
+        double var_rot1  = alpha_1_ * r1n*r1n + alpha_2_ * hat_trans*hat_trans;
+        double var_trans = alpha_3_ * hat_trans*hat_trans + alpha_4_ * (r1n*r1n + r2n*r2n);
+        double var_rot2  = alpha_1_ * r2n*r2n + alpha_2_ * hat_trans*hat_trans;
+
+        // Candidate decomposition (note: always yields cand_trans >= 0)
         double cand_dx = candidate_pose.x - prev_pose.x;
         double cand_dy = candidate_pose.y - prev_pose.y;
         double cand_trans = std::sqrt(cand_dx*cand_dx + cand_dy*cand_dy);
-        double cand_rot1 = (cand_trans > 0.001) 
-            ? normalizeAngle(std::atan2(cand_dy, cand_dx) - prev_pose.theta) 
+        double cand_rot1 = (cand_trans > 0.001)
+            ? normalizeAngle(std::atan2(cand_dy, cand_dx) - prev_pose.theta)
             : 0.0;
         double cand_rot2 = normalizeAngle(candidate_pose.theta - prev_pose.theta - cand_rot1);
 
-        double var_rot1  = alpha_1_ * hat_rot1*hat_rot1   + alpha_2_ * hat_trans*hat_trans;
-        double var_trans = alpha_3_ * hat_trans*hat_trans  + alpha_4_ * (hat_rot1*hat_rot1 + hat_rot2*hat_rot2);
-        double var_rot2  = alpha_1_ * hat_rot2*hat_rot2   + alpha_2_ * hat_trans*hat_trans;
+        auto logGaussian = [&](double r1, double t, double r2) {
+            double d1 = normalizeAngle(r1 - hat_rot1);
+            double dt = t - hat_trans;
+            double d2 = normalizeAngle(r2 - hat_rot2);
+            return - 0.5 * d1*d1 / std::max(var_rot1,  1e-6)
+                - 0.5 * dt*dt / std::max(var_trans, 1e-6)
+                - 0.5 * d2*d2 / std::max(var_rot2,  1e-6);
+        };
 
-        double diff_rot1  = normalizeAngle(cand_rot1 - hat_rot1);
-        double diff_trans = cand_trans - hat_trans;
-        double diff_rot2  = normalizeAngle(cand_rot2 - hat_rot2);
-
-        double log_p =  -0.5 * diff_rot1*diff_rot1   / std::max(var_rot1,  1e-6)
-                      + -0.5 * diff_trans*diff_trans  / std::max(var_trans, 1e-6)
-                      + -0.5 * diff_rot2*diff_rot2    / std::max(var_rot2,  1e-6);
-
-        return log_p;
+        // (rot1, trans, rot2) and (rot1+π, -trans, rot2-π) produce the identical
+        // pose. The sqrt/atan2 decomposition above always picks the +trans branch,
+        // so a candidate sitting *behind* prev_pose decomposes with rot1 ≈ ±π and
+        // would be annihilated against a forward hat (diff ≈ π). Evaluate both
+        // branches and keep the dominant one.
+        double lp_a = logGaussian(cand_rot1, cand_trans, cand_rot2);
+        double lp_b = logGaussian(normalizeAngle(cand_rot1 + M_PI),
+                                -cand_trans,
+                                normalizeAngle(cand_rot2 - M_PI));
+        return std::max(lp_a, lp_b);
     }
 
     double MotionModel::sampleNoise(double var) {
