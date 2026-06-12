@@ -241,7 +241,7 @@ namespace fastslam {
             double dx = curr_x - prev_pose_.x;
             double dy = curr_y - prev_pose_.y;
             double delta_dist = std::sqrt(dx*dx + dy*dy);
-            double delta_rot = prev_pose_.theta - curr_theta;
+            double delta_rot = std::abs(normalizeAngle(curr_theta - prev_pose_.theta));
             if (delta_dist < linear_update_ && std::abs(delta_rot) < angular_update_) return;
             
             total_distance_ += delta_dist;
@@ -430,7 +430,7 @@ namespace fastslam {
             std::vector<double> normalized_w(num_particles_);
             double sum_w = 0.0;
             for (int i = 0; i < num_particles_; i++) {
-                normalized_w[i] = std::exp(particles_[i].w - max_w);
+                normalized_w[i] = std::exp((particles_[i].w - max_w)/ (6.0*num_particles_));
                 sum_w += normalized_w[i];
             }
             for (int i = 0; i < num_particles_; i++) normalized_w[i] /= sum_w;
@@ -485,7 +485,6 @@ namespace fastslam {
                 resample_count_++;
             }
 
-            publishMap(*best_particle);
             publishParticles();
             // last_scan_pose_ = prev_pose_;
 
@@ -543,6 +542,7 @@ namespace fastslam {
                 Xt.back().w = 0.0; 
             }
             particles_ = Xt;
+            publishMap(particles_[0]);
         }
 
 
@@ -650,6 +650,10 @@ namespace fastslam {
                 
             }
             particles_pub_->publish(msg);
+        }
+
+        double normalizeAngle(double angle) {
+            return std::remainder(angle, 2.0 * M_PI);
         }
 
 
