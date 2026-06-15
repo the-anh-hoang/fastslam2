@@ -2,25 +2,32 @@
 #define OCCUPANCY_CHUNK_HPP 
 
 #include <vector> 
+#include <optional>
+#include "fastslam/cell.hpp"
 
 namespace fastslam 
 {
-    // LOG ODDS OCCUPANCY CHUNK 
+    // size x size chunk of center of mass cells
     struct OccupancyChunk {
-        int size; // cells per side
-        std::vector<float> cells;
+        int size; 
+        std::vector<Cell> cells;
 
         OccupancyChunk() : size(0) {} 
 
         explicit OccupancyChunk(int cells_per_side) 
-            : size(cells_per_side), cells(cells_per_side * cells_per_side, 0.0f) {}        
+            : size(cells_per_side), cells(cells_per_side * cells_per_side) {}        
 
-        float get(int local_x, int local_y) const {
-            return cells[local_y * size + local_x]; 
+        std::optional<std::pair<double, double>> getMean(int local_x, int local_y) const {
+            const Cell& c = cells[local_y * size + local_x];
+            if (c.isOccupied(3)) {
+                return cells[local_y * size + local_x].getMean(); 
+            } else {
+                return std::nullopt; 
+            }
         }
 
-        void set(int local_x, int local_y, float value) {
-            cells[local_y * size + local_x] = value; 
+        void updateHit(double x, double y, int local_x, int local_y) {
+            cells[local_y * size + local_x].updateHit(x,y); 
         }
     };
 

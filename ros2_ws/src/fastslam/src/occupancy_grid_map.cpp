@@ -9,43 +9,21 @@ namespace fastslam
         chunks_[packKey(0,0)] = OccupancyChunk(map_params_.cells_per_side); 
     }
 
-    void OccupancyGridMap::accumulateLogOdds(int x, int y, float log_p) {
-        OccupancyChunk& chunk = getOrCreateChunk(x,y);
-        int lx = localOffset(x);
-        int ly = localOffset(y);
+    void OccupancyGridMap::updateHit(double x_world, double y_world) {
+        auto [x_grid, y_grid] = worldToGridCoords(x_world, y_world); 
+        OccupancyChunk& chunk = getOrCreateChunk(x_grid, y_grid);
+        int lx_grid = localOffset(x_grid);
+        int ly_grid = localOffset(y_grid);
 
-        float log_odds_clamped = std::clamp(
-            chunk.get(lx,ly) + log_p,
-            map_params_.l_min, map_params_.l_max
-        );
-        chunk.set(lx,ly,log_odds_clamped);  
-        distance_dirty_ = true; 
+        chunk.updateHit(x_world, y_world, lx_grid, ly_grid);  
     }
 
-    float OccupancyGridMap::getLogOdds(int x, int y) const {
-        const OccupancyChunk* chunk = findChunk(x,y);
-        if (!chunk) return 0.0f; 
-        return chunk->get(localOffset(x), localOffset(y)); 
-    }
-
-    float OccupancyGridMap::distanceAt(int x, int y) {
-        if (distance_dirty_) {
-            computeDistanceMap();
-            distance_dirty_ = false;
-        }
-
-        float lo = getLogOdds(x, y);
-        if (lo == 0.0f) {
-            return max_dist_;
-        }
-
-        int px = x - grid_origin_x_;
-        int py = y - grid_origin_y_;
-
-        if (px < 0 || py < 0 || px >= dist_mat_.cols || py >= dist_mat_.rows) {
-            return max_dist_;
-        }
-        return dist_mat_.at<float>(py, px) * map_params_.resolution;
+    // get the mean of the cell that x and y fall into
+    std::optional<std::pair<double,double>> OccupancyGridMap::getMean(double x_world, double y_world) const {
+        auto [x_grid, y_grid] = worldToGridCoords(x_world, y_world); 
+        const OccupancyChunk* chunk = findChunk(x_grid,y_grid);
+        if (!chunk) return std::nullopt;
+        return chunk->getMean(localOffset(x_grid), localOffset(y_grid));
     }
 
     std::pair<int, int> OccupancyGridMap::worldToGridCoords(double x, double y) const {
@@ -57,8 +35,8 @@ namespace fastslam
 
     std::pair<double, double> OccupancyGridMap::worldToGridCoordsExact(double x, double y) const {
         return {
-        (x-map_params_.origin_x)/map_params_.resolution,
-        (y-map_params_.origin_y)/map_params_.resolution 
+            (x-map_params_.origin_x)/map_params_.resolution,
+            (y-map_params_.origin_y)/map_params_.resolution 
         };
     }
 
@@ -71,32 +49,32 @@ namespace fastslam
 
     ROSMsg OccupancyGridMap::toROSData() const {
         ROSMsg ros_msg; 
-        int min_x, min_y, max_x, max_y;
-        getMapBoundingBox(min_x, min_y, max_x, max_y);
-        int width = max_x - min_x;
-        int height = max_y - min_y;
-        std::pair<double,double> world_origin = gridToWorldCoords(min_x, min_y); 
-        ros_msg.origin_x =  world_origin.first;
-        ros_msg.origin_y = world_origin.second; 
-        ros_msg.width = max_x - min_x;
-        ros_msg.height = max_y - min_y; 
-        ros_msg.data.resize(width*height,-1);
+        // int min_x, min_y, max_x, max_y;
+        // getMapBoundingBox(min_x, min_y, max_x, max_y);
+        // int width = max_x - min_x;
+        // int height = max_y - min_y;
+        // std::pair<double,double> world_origin = gridToWorldCoords(min_x, min_y); 
+        // ros_msg.origin_x =  world_origin.first;
+        // ros_msg.origin_y = world_origin.second; 
+        // ros_msg.width = max_x - min_x;
+        // ros_msg.height = max_y - min_y; 
+        // ros_msg.data.resize(width*height,-1);
         
-        float p; 
-        int idx;
-        for (int x = min_x; x < max_x; x++) {
-            for (int y = min_y; y < max_y; y++) {
-                idx = (y - min_y) * width + (x - min_x);
-                p = 1.0f/(1.0f + std::exp(-getLogOdds(x,y)));
-                if (p > 0.7) {
-                    ros_msg.data[idx] = 100;
-                } else if (p < 0.3) {
-                    ros_msg.data[idx] = 0;
-                } else {
-                    ros_msg.data[idx] = -1; 
-                }
-            }
-        }
+        // float p; 
+        // int idx;
+        // for (int x = min_x; x < max_x; x++) {
+        //     for (int y = min_y; y < max_y; y++) {
+        //         idx = (y - min_y) * width + (x - min_x);
+        //         p = 1.0f/(1.0f + std::exp(-getLogOdds(x,y)));
+        //         if (p > 0.7) {
+        //             ros_msg.data[idx] = 100;
+        //         } else if (p < 0.3) {
+        //             ros_msg.data[idx] = 0;
+        //         } else {
+        //             ros_msg.data[idx] = -1; 
+        //         }
+        //     }
+        // }
         return ros_msg; 
     }
 
@@ -163,48 +141,5 @@ namespace fastslam
         int res = cell % map_params_.cells_per_side;
         if (res < 0) res += map_params_.cells_per_side;
         return res; 
-    }
-
-    void OccupancyGridMap::computeDistanceMap() {
-        int min_x, min_y, max_x, max_y;
-        getMapBoundingBox(min_x, min_y, max_x, max_y);
-        int width = max_x - min_x;
-        int height = max_y - min_y;
-
-        grid_origin_x_ = min_x;
-        grid_origin_y_ = min_y;
-
-        cv::Mat binary_map(height, width, CV_8UC1, cv::Scalar(255));
-        // for (int r = 0; r < height; r++) {
-        //     for (int c = 0; c < width; c++) {
-        //         if (getLogOdds(min_x + c, min_y + r) >= 2.33f) {
-        //             binary_map.at<uchar>(r, c) = 0;
-        //         }
-        //     }
-        // }
-
-        // instead of looping through cv mat, loop through chunks
-        // to disregard unknown cells 
-        for (const auto& [key, chunk] : chunks_) {
-            int cx = (int) (key >> 32); 
-            int cy = (int) (key & 0xFFFFFFFF);
-            int offset_x = cx * map_params_.cells_per_side - min_x;
-            int offset_y = cy * map_params_.cells_per_side - min_y;
-
-            for (int ly = 0; ly < map_params_.cells_per_side; ly++) {
-                for (int lx = 0; lx < map_params_.cells_per_side; lx++) {
-                    if (chunk.get(lx, ly) >= 2.33f) {
-                        binary_map.at<uchar>(offset_y + ly, offset_x + lx) = 0;
-                    }
-                }
-            }
-        }
-
-        cv::distanceTransform(binary_map, dist_mat_, cv::DIST_L2, cv::DIST_MASK_5);
-        double max_val;
-        cv::minMaxLoc(dist_mat_, nullptr, &max_val);
-        max_dist_ = max_val * map_params_.resolution;
-
-        distance_dirty_ = false;
     }
 }

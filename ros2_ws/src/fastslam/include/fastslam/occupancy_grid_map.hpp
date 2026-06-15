@@ -2,8 +2,8 @@
 #define FASTSLAM_OCCUPANCY_GRID_MAP_HPP
 #include <unordered_map>
 #include <vector> 
+#include <optional>
 #include <cstdint>
-#include <opencv2/opencv.hpp> 
 #include "fastslam/occupancy_chunk.hpp"
 
 namespace fastslam 
@@ -42,13 +42,13 @@ namespace fastslam
             explicit OccupancyGridMap(const MapParams& params);
 
             // Update cell's log odds value
-            void accumulateLogOdds(int x, int y, float log_p);
+            // it will be occupancygridmap job to find the chunk
+            // and cell 
+            void updateHit(double x_world, double y_world);
             
-            // Get cell's log odds value
-            float getLogOdds(int x, int y) const;
+            // Get cell's center of mass
+            std::optional<std::pair<double, double>> getMean(double x_world, double y_world) const;
             
-            // Get distance at cell x, y
-            float distanceAt(int x, int y);
 
             // Convert world x, y to cell coordinates x, y
             std::pair<int, int> worldToGridCoords(double x, double y) const;
@@ -70,7 +70,6 @@ namespace fastslam
             std::unordered_map<int64_t, OccupancyChunk> chunks_; 
             MapParams map_params_;
 
-            cv::Mat dist_mat_;
             float max_dist_ = 0.0f; 
             bool distance_dirty_ = true;
             int grid_origin_x_, grid_origin_y_;  
@@ -79,13 +78,10 @@ namespace fastslam
 
             static int64_t packKey(int cx, int cy);  
             int chunkIndex(int cell) const; 
-            // Compute distance map for likelihood sensor model
-
 
             OccupancyChunk& getOrCreateChunk(int x, int y); 
             const OccupancyChunk* findChunk(int x, int y) const; 
             int localOffset(int cell) const; 
-            void computeDistanceMap();
     };
 }
 #endif
