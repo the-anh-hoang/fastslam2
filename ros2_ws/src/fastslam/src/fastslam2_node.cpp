@@ -21,6 +21,7 @@
 #include "fastslam/particle.hpp"
 #include "fastslam/motion_model.hpp"
 #include "fastslam/pose.hpp"
+#include "fastslam/angle_utils.hpp"
 
 
 
@@ -48,6 +49,7 @@ namespace fastslam {
             this->declare_parameter("linear_update", 0.5);
             this->declare_parameter("angular_update", 0.2);
             this->declare_parameter("resample_threshold", 0.5);
+            this->declare_parameter("map_publish_period", 5.0);  // seconds between /map publishes
             
 
             num_particles_ = this->get_parameter("num_particles").as_int();
@@ -100,7 +102,6 @@ namespace fastslam {
 
             );
             integrator_ = ScanIntegrator(
-                1.2f, -1.2f, 1,
                 laser_dx, laser_dy, laser_dtheta,
                 this->get_parameter("ray_skip").as_int()
             );
@@ -109,6 +110,8 @@ namespace fastslam {
             angular_update_ = this->get_parameter("angular_update").as_double();
 
             resample_threshold_ = this->get_parameter("resample_threshold").as_double(); 
+            map_publish_period_ = this->get_parameter("map_publish_period").as_double();
+            last_map_pub_time_ = this->now();
             RCLCPP_INFO(this->get_logger(), "num_particles: %d", num_particles_);
             RCLCPP_INFO(this->get_logger(), "linear_update: %.2f", linear_update_);
             
@@ -166,6 +169,10 @@ namespace fastslam {
         double linear_update_;
         double angular_update_;
         double resample_threshold_; 
+
+        // Map publish throttle
+        double map_publish_period_;
+        rclcpp::Time last_map_pub_time_;
 
         // Tracking
         int scan_count_ = 0;
@@ -225,7 +232,7 @@ namespace fastslam {
             // just integrate first scan 
             if (!scan_initialized_) {
                 for (Particle& particle : particles_) {
-                    integrator_.integrateScan(particle.map, scan, particle.x, particle.y, particle.theta, 1.5f, -1.5f);                 
+                    integrator_.integrateScan(particle.map, scan, particle.x, particle.y, particle.theta);                 
                     scan_initialized_ = true;
                 }
                 publishMap(particles_[0]);
@@ -280,13 +287,12 @@ namespace fastslam {
 
             double total_weight = 0.0;
             Particle* best_particle = nullptr;
-            Pose odom_predicted_pose;
 
             #pragma omp parallel for reduction(+:total_weight) schedule(static)
             for (int i = 0; i < num_particles_; i++) {
                 Particle& particle = particles_[i];
-                // motion prediction based on odom
-                odom_predicted_pose = md_.applyMotionModel(
+                // motion prediction based on odom — local to each thread (no race)
+                Pose odom_predicted_pose = md_.applyMotionModel(
                     Pose(particle.x, particle.y, particle.theta), 
                     prev_pose_,
                     curr_pose, 
@@ -314,10 +320,11 @@ namespace fastslam {
                 // TODO: MISSING CASE FOR FAILED SCAN MATCHER
 
                 // -- SAMPLE AROUND THE MODE --
+
                 std::vector<Pose> poses_sampled; poses_sampled.reserve(500);
                 std::vector<double> log_weights; log_weights.reserve(500);
                 double lmax = -std::numeric_limits<double>::infinity();
-                double log_p_zt_xt, log_p_xt_ut;
+                double lw, log_p_zt_xt, log_p_xt_ut;
                 double dx, dy, dtheta, drho;
                 for (double x = best_x-0.1; x < best_x+0.1; x+=0.025) {
                     for (double y = best_y-0.1; y < best_y+0.1; y+=0.025) {
@@ -336,13 +343,19 @@ namespace fastslam {
                             //     "  scan_match_likelihood=%.05f | motion_likelihood=%.05f",
                             //     log_p_zt_xt, log_p_xt_ut);
                             // log_p_xt_ut = -0.1  * drho - 0.1 * dtheta * dtheta;
-                            double lw = log_p_zt_xt + log_p_xt_ut;
-                            poses_sampled.push_back(Pose(x,y,std::remainder(theta, 2.0*M_PI)));
+                            lw = log_p_zt_xt + log_p_xt_ut;
+                            poses_sampled.push_back(Pose(x,y,normalizeAngle(theta)));
                             log_weights.push_back(lw);
+                            
                             if (lw > lmax) lmax = lw;
                         }
+                        RCLCPP_INFO(this->get_logger(),
+                                "Pose: x: %.1f, y: %.1f | Scan likelihood: %.001f",
+                                x, y, log_p_zt_xt
+                        );
                     }
                 }
+                
 
                 // -- Computing the GAUSSIAN PROPOSAL -- 
                 Pose mean_pose(0.0,0.0,0.0);
@@ -413,7 +426,7 @@ namespace fastslam {
                 particle.theta = sampled_theta;
 
                 particle.w += std::log(normalizing_term) + lmax;
-                RCLCPP_INFO(this->get_logger(), "   Particle %d weight: %.00005f", i, particle.w);
+                // RCLCPP_INFO(this->get_logger(), "   Particle %d weight: %.00005f", i, particle.w);
                 integrator_.integrateScan(particle.map, scan, particle.x, particle.y, particle.theta);
                 total_weight += particle.w;
             }
@@ -422,6 +435,10 @@ namespace fastslam {
     
             calculateOdomTf(best_particle);
             prev_pose_ = curr_pose; 
+            if ((this->now() - last_map_pub_time_).seconds() >= map_publish_period_) {
+                publishMap(*best_particle);
+                last_map_pub_time_ = this->now();
+            }
 
             // --- Compute N_eff before resampling ---
             double max_w = -std::numeric_limits<double>::infinity();
@@ -430,7 +447,7 @@ namespace fastslam {
             std::vector<double> normalized_w(num_particles_);
             double sum_w = 0.0;
             for (int i = 0; i < num_particles_; i++) {
-                normalized_w[i] = std::exp((particles_[i].w - max_w)/ (6.0*num_particles_));
+                normalized_w[i] = std::exp((particles_[i].w - max_w)/ (3.0*num_particles_));
                 sum_w += normalized_w[i];
             }
             for (int i = 0; i < num_particles_; i++) normalized_w[i] /= sum_w;
@@ -516,7 +533,7 @@ namespace fastslam {
             std::vector<double> linear_w(num_particles_);
             double sum_w = 0.0;
             for (int i = 0; i < num_particles_; i++) {
-                linear_w[i] = std::exp(particles_[i].w - max_w); 
+                linear_w[i] = std::exp((particles_[i].w - max_w) / (3.0*num_particles_));
                 sum_w += linear_w[i];
             }
 
@@ -542,7 +559,6 @@ namespace fastslam {
                 Xt.back().w = 0.0; 
             }
             particles_ = Xt;
-            publishMap(particles_[0]);
         }
 
 
@@ -650,10 +666,6 @@ namespace fastslam {
                 
             }
             particles_pub_->publish(msg);
-        }
-
-        double normalizeAngle(double angle) {
-            return std::remainder(angle, 2.0 * M_PI);
         }
 
 

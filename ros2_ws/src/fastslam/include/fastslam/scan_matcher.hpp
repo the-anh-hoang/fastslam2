@@ -41,9 +41,19 @@ namespace fastslam
             {}
             
             ScanMatchResult matchScan(
-                Particle& particle, 
+                Particle& particle,
                 const sensor_msgs::msg::LaserScan& scan
-                
+
+            );
+
+            // Hill-climbing scan match (the scan registration of Grisetti et
+            // al. / GMapping's optimize()): greedy axis moves from the
+            // particle's pose, halving the step when no move improves.
+            // x_range_/theta_range_ act as the initial step (capture reach),
+            // step_size_xy_/step_size_theta_ as the terminal precision.
+            ScanMatchResult matchScanGradient(
+                Particle& particle,
+                const sensor_msgs::msg::LaserScan& scan
             );
             
             double computeLikelihood(

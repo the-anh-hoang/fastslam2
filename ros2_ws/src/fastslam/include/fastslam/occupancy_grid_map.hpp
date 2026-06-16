@@ -49,6 +49,7 @@ namespace fastslam
             // Get cell's center of mass
             std::optional<std::pair<double, double>> getMean(double x_world, double y_world) const;
             
+            std::optional<std::pair<double, double>> kernelSearch(double x_world, double y_world, int kernel_size) const;
 
             // Convert world x, y to cell coordinates x, y
             std::pair<int, int> worldToGridCoords(double x, double y) const;

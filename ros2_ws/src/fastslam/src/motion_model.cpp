@@ -1,17 +1,14 @@
 #include "fastslam/motion_model.hpp"
+#include "fastslam/angle_utils.hpp"
 #include <cmath>
-#include <algorithm> 
+#include <algorithm>
 
-static double normalizeAngle(double angle) {
-    return std::remainder(angle, 2.0 * M_PI);
-}
-static double foldRotation(double rot) {
+namespace fastslam
+{
+    static double foldRotation(double rot) {
         return std::min(std::abs(normalizeAngle(rot)),
                         std::abs(normalizeAngle(rot - M_PI)));
-}
-
-namespace fastslam 
-{
+    }
     Pose MotionModel::applyMotionModel(Pose robot_pose, Pose prev_odom, Pose curr_odom, bool deterministic) {
         double delta_x = curr_odom.x - prev_odom.x;
         double delta_y = curr_odom.y - prev_odom.y;

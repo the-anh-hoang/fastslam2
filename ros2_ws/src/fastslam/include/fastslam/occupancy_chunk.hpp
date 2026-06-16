@@ -19,7 +19,7 @@ namespace fastslam
 
         std::optional<std::pair<double, double>> getMean(int local_x, int local_y) const {
             const Cell& c = cells[local_y * size + local_x];
-            if (c.isOccupied(3)) {
+            if (c.isOccupied(2)) {
                 return cells[local_y * size + local_x].getMean(); 
             } else {
                 return std::nullopt; 
@@ -27,7 +27,11 @@ namespace fastslam
         }
 
         void updateHit(double x, double y, int local_x, int local_y) {
-            cells[local_y * size + local_x].updateHit(x,y); 
+            cells[local_y * size + local_x].updateHit(x,y);
+        }
+
+        bool isOccupied(int local_x, int local_y, float min_hits) const {
+            return cells[local_y * size + local_x].isOccupied(min_hits);
         }
     };
 

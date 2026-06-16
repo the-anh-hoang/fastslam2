@@ -1,5 +1,6 @@
 #include "fastslam/occupancy_grid_map.hpp"
-#include <opencv2/opencv.hpp>
+#include <limits>
+#include <cmath>
 
 namespace fastslam 
 {
@@ -26,6 +27,32 @@ namespace fastslam
         return chunk->getMean(localOffset(x_grid), localOffset(y_grid));
     }
 
+    std::optional<std::pair<double, double>> OccupancyGridMap::kernelSearch(double x_world, double y_world, int kernel_size) const {
+        auto [x_grid, y_grid] = worldToGridCoords(x_world, y_world);
+        const OccupancyChunk* chunk;
+        double closest_dist = std::numeric_limits<double>::infinity(); 
+        std::optional<std::pair<double, double>> closest_point;
+        std::optional<std::pair<double, double>> candidate_point; 
+        for (int dx = -kernel_size; dx <= kernel_size; dx++) {
+            for (int dy = -kernel_size; dy <= kernel_size; dy++) {
+                chunk = findChunk(x_grid+dx, y_grid+dy);
+                if (!chunk) continue;
+                candidate_point = chunk->getMean(localOffset(x_grid+dx), localOffset(y_grid+dy));
+                if (!candidate_point) continue; 
+                auto [x,y] = *candidate_point;
+                double dist = sqrt((x-x_world)*(x-x_world) + (y-y_world)*(y-y_world));
+                if (dist < closest_dist) {
+                    closest_dist = dist;
+                    closest_point = {x,y}; 
+                }
+            }
+        }
+        return closest_point; 
+    }
+        
+        
+    
+
     std::pair<int, int> OccupancyGridMap::worldToGridCoords(double x, double y) const {
         return {
             static_cast<int>(std::floor((x - map_params_.origin_x) / map_params_.resolution)),
@@ -49,33 +76,28 @@ namespace fastslam
 
     ROSMsg OccupancyGridMap::toROSData() const {
         ROSMsg ros_msg; 
-        // int min_x, min_y, max_x, max_y;
-        // getMapBoundingBox(min_x, min_y, max_x, max_y);
-        // int width = max_x - min_x;
-        // int height = max_y - min_y;
-        // std::pair<double,double> world_origin = gridToWorldCoords(min_x, min_y); 
-        // ros_msg.origin_x =  world_origin.first;
-        // ros_msg.origin_y = world_origin.second; 
-        // ros_msg.width = max_x - min_x;
-        // ros_msg.height = max_y - min_y; 
-        // ros_msg.data.resize(width*height,-1);
-        
-        // float p; 
-        // int idx;
-        // for (int x = min_x; x < max_x; x++) {
-        //     for (int y = min_y; y < max_y; y++) {
-        //         idx = (y - min_y) * width + (x - min_x);
-        //         p = 1.0f/(1.0f + std::exp(-getLogOdds(x,y)));
-        //         if (p > 0.7) {
-        //             ros_msg.data[idx] = 100;
-        //         } else if (p < 0.3) {
-        //             ros_msg.data[idx] = 0;
-        //         } else {
-        //             ros_msg.data[idx] = -1; 
-        //         }
-        //     }
-        // }
-        return ros_msg; 
+        int min_x, min_y, max_x, max_y;
+        getMapBoundingBox(min_x, min_y, max_x, max_y);
+        int width = max_x - min_x;
+        int height = max_y - min_y;
+        std::pair<double,double> world_origin = gridToWorldCoords(min_x, min_y); 
+        ros_msg.origin_x =  world_origin.first;
+        ros_msg.origin_y = world_origin.second; 
+        ros_msg.width = max_x - min_x;
+        ros_msg.height = max_y - min_y; 
+        ros_msg.data.resize(width*height,-1);
+
+
+        for (int x = min_x; x < max_x; x++) {
+            for (int y = min_y; y < max_y; y++) {
+                const OccupancyChunk* chunk = findChunk(x, y);
+                if (!chunk) continue;
+                if (chunk->isOccupied(localOffset(x), localOffset(y), 1)) {
+                    ros_msg.data[(y - min_y) * width + (x - min_x)] = 100;
+                }
+            }
+        }
+        return ros_msg;
     }
 
     MapParams OccupancyGridMap::getMapParams() const {
@@ -87,8 +109,11 @@ namespace fastslam
             min_x = min_y = max_x = max_y = 0;
             return;
         } 
-        int min_cx = INT_MAX, min_cy = INT_MAX;
-        int max_cx = INT_MIN, max_cy = INT_MIN;
+        int min_cx = std::numeric_limits<int>::max();
+        int min_cy = std::numeric_limits<int>::max();
+
+        int max_cx = std::numeric_limits<int>::lowest();
+        int max_cy = std::numeric_limits<int>::lowest();
 
         // find the min/max chunk index
         for (const auto& [key, _] : chunks_) {
