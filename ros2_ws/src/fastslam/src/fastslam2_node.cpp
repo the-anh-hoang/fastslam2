@@ -254,22 +254,7 @@ namespace fastslam {
             total_distance_ += delta_dist;
             scan_count_++;
             
-            // sample motion model
-            // Pose sampled_pose;
-            // for (Particle& p : particles_) {
-            //     sampled_pose = md_.applyMotionModel(
-            //         Pose(p.x, p.y, p.theta),
-            //         prev_pose_,
-            //         curr_pose
-            //     );
-            //     p.x = sampled_pose.x;
-            //     p.y = sampled_pose.y;
-            //     p.theta = sampled_pose.theta; 
-            // }
-            // prev_pose_ = curr_pose; 
-            // publishParticles(); 
-
-            // motion prediction based on odometry
+            
             using Ms = std::chrono::duration<double, std::milli>;
             auto t_cb_start = std::chrono::steady_clock::now();
 
@@ -328,31 +313,28 @@ namespace fastslam {
                 double dx, dy, dtheta, drho;
                 for (double x = best_x-0.1; x < best_x+0.1; x+=0.025) {
                     for (double y = best_y-0.1; y < best_y+0.1; y+=0.025) {
-                        for (double theta = best_theta-0.005; theta < best_theta+0.0051; theta+=0.0025) {
+                        for (double theta = best_theta-0.05; theta < best_theta+0.051; theta+=0.01) {
                             dx = x - particle.x;
                             dy = y - particle.y;
                             dtheta = std::atan2(std::sin(theta - particle.theta), std::cos(theta - particle.theta));
-                            drho = dx*dx + dy*dy;
+
                             log_p_zt_xt = scan_matcher_.computeLikelihood(particle.map, x, y, theta, scan);
                             log_p_xt_ut = md_.evaluateLogMotionError(
                                 pre_motion_poses_[i],
                                 Pose(x, y, theta),
                                 Pose(particle.x, particle.y, particle.theta)
                             );
-                            //  RCLCPP_INFO(this->get_logger(),
-                            //     "  scan_match_likelihood=%.05f | motion_likelihood=%.05f",
-                            //     log_p_zt_xt, log_p_xt_ut);
-                            // log_p_xt_ut = -0.1  * drho - 0.1 * dtheta * dtheta;
+                    
                             lw = log_p_zt_xt + log_p_xt_ut;
                             poses_sampled.push_back(Pose(x,y,normalizeAngle(theta)));
                             log_weights.push_back(lw);
                             
                             if (lw > lmax) lmax = lw;
                         }
-                        RCLCPP_INFO(this->get_logger(),
-                                "Pose: x: %.1f, y: %.1f | Scan likelihood: %.001f",
-                                x, y, log_p_zt_xt
-                        );
+                        // RCLCPP_INFO(this->get_logger(),
+                        //         "Pose: x: %.1f, y: %.1f | Scan likelihood: %.001f",
+                        //         x, y, log_p_zt_xt
+                        // );
                     }
                 }
                 
@@ -425,7 +407,7 @@ namespace fastslam {
                 particle.y = sampled_y;
                 particle.theta = sampled_theta;
 
-                particle.w += std::log(normalizing_term) + lmax;
+                particle.w += (std::log(normalizing_term) + lmax);
                 // RCLCPP_INFO(this->get_logger(), "   Particle %d weight: %.00005f", i, particle.w);
                 integrator_.integrateScan(particle.map, scan, particle.x, particle.y, particle.theta);
                 total_weight += particle.w;
@@ -447,7 +429,7 @@ namespace fastslam {
             std::vector<double> normalized_w(num_particles_);
             double sum_w = 0.0;
             for (int i = 0; i < num_particles_; i++) {
-                normalized_w[i] = std::exp((particles_[i].w - max_w)/ (3.0*num_particles_));
+                normalized_w[i] = std::exp((particles_[i].w - max_w)/ (4.0*num_particles_));
                 sum_w += normalized_w[i];
             }
             for (int i = 0; i < num_particles_; i++) normalized_w[i] /= sum_w;
