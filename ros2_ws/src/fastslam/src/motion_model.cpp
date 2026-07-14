@@ -2,7 +2,7 @@
 #include "fastslam/angle_utils.hpp"
 #include <cmath>
 #include <algorithm>
-
+#include <iostream>
 namespace fastslam
 {
     static double foldRotation(double rot) {
@@ -16,9 +16,12 @@ namespace fastslam
         
         // Raw Kinematics
         double delta_trans = std::sqrt(delta_x*delta_x + delta_y*delta_y);
-        double delta_rot1 = normalizeAngle(
-            (delta_trans > 0.001) ? std::atan2(delta_y, delta_x) - prev_odom.theta : 0.0
-        );
+        // in place rotation, only account rot2 noise 
+        double delta_rot1;
+        if (delta_trans < 0.02)
+            delta_rot1 = 0.0;
+        else
+            delta_rot1 = normalizeAngle(std::atan2(delta_y, delta_x) - prev_odom.theta);
         double delta_rot2 = normalizeAngle(delta_theta - delta_rot1);
 
         // Noise penalty 
@@ -52,7 +55,6 @@ namespace fastslam
                 alpha_1_*delta_rot2_noise*delta_rot2_noise + alpha_2_*delta_trans*delta_trans
             );
         }
-
         double new_x     = robot_pose.x + noisy_trans * std::cos(robot_pose.theta + noisy_rot1);
         double new_y     = robot_pose.y + noisy_trans * std::sin(robot_pose.theta + noisy_rot1);
         double new_theta = normalizeAngle(robot_pose.theta + noisy_rot1 + noisy_rot2);
@@ -97,11 +99,6 @@ namespace fastslam
                 - 0.5 * d2*d2 / std::max(var_rot2,  1e-6);
         };
 
-        // (rot1, trans, rot2) and (rot1+π, -trans, rot2-π) produce the identical
-        // pose. The sqrt/atan2 decomposition above always picks the +trans branch,
-        // so a candidate sitting *behind* prev_pose decomposes with rot1 ≈ ±π and
-        // would be annihilated against a forward hat (diff ≈ π). Evaluate both
-        // branches and keep the dominant one.
         double lp_a = logGaussian(cand_rot1, cand_trans, cand_rot2);
         double lp_b = logGaussian(normalizeAngle(cand_rot1 + M_PI),
                                 -cand_trans,

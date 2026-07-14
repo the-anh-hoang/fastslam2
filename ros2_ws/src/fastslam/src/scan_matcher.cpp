@@ -6,7 +6,7 @@
 namespace fastslam 
 {
 
-    ScanMatchResult ScanMatcher::matchScan(
+    ScanMatchResult ScanMatcher::matchScanCorrelative(
         Particle& particle, 
         const sensor_msgs::msg::LaserScan& scan
     ) {
@@ -21,24 +21,49 @@ namespace fastslam
         double start_theta = particle.theta - theta_range_;
         double end_theta = particle.theta + theta_range_; 
 
-        Pose best_pose(0.0, 0.0, 0.0);
+        double cell_size = particle.map.getMapParams().resolution;
+
+        Pose best_cell(0.0, 0.0, 0.0);
         double best_likelihood = -std::numeric_limits<double>::infinity(); 
         double log_p;
-        for (double x = start_x; x < end_x; x+=step_size_xy_) {
-            for (double y = start_y; y < end_y; y+=step_size_xy_) {
+        
+        // 1st stage: find best cell
+        
+        for (double x = start_x; x < end_x; x+=cell_size) {
+            for (double y = start_y; y < end_y; y+=cell_size) {
                 for (double theta = start_theta; theta < end_theta; theta+=step_size_theta_) {
                    
                     log_p = computeLikelihood(particle.map, x, y, theta, scan); 
                     if (log_p > best_likelihood) {
                         best_likelihood = log_p;
-                        best_pose.x = x; 
-                        best_pose.y = y;
-                        best_pose.theta = theta; 
+                        best_cell.x = x; 
+                        best_cell.y = y;
+                        best_cell.theta = normalizeAngle(theta); 
                     }  
                 }
             }
         }
-        return ScanMatchResult(best_pose, best_likelihood);
+        
+        // 2nd stage: find best subcell pos
+        double sub_cell_step = cell_size / 3;
+        double sub_theta_step = step_size_theta_ / 5;
+        Pose best_pose = Pose(best_cell.x, best_cell.y, best_cell.theta);
+        for (double x = best_cell.x-cell_size; x < best_cell.x+cell_size; x+=sub_cell_step) {
+            for (double y = best_cell.y-cell_size; y < best_cell.y+cell_size; y+=sub_cell_step) {
+                for (double theta = best_cell.theta-(step_size_theta_/2); theta < best_cell.theta+(step_size_theta_/2); theta+=sub_theta_step) {
+                    
+                    log_p = computeLikelihood(particle.map, x, y, theta, scan); 
+                    if (log_p > best_likelihood) {
+                        best_likelihood = log_p;
+                        best_pose.x = x; 
+                        best_pose.y = y;
+                        best_pose.theta = normalizeAngle(theta); 
+                    }  
+                }
+            }
+        }
+
+        return ScanMatchResult(best_pose, best_likelihood/3);
     }
 
 

@@ -40,7 +40,7 @@ namespace fastslam
                 z_hit_(z_hit), std_hit_(std_hit), z_rand_(z_rand) 
             {}
             
-            ScanMatchResult matchScan(
+            ScanMatchResult matchScanCorrelative(
                 Particle& particle,
                 const sensor_msgs::msg::LaserScan& scan
 

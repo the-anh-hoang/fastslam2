@@ -210,40 +210,73 @@ namespace fastslam {
 
         void odomCallback(const nav_msgs::msg::Odometry& odom_msg) {
             odom_msg_ = odom_msg; 
-            if (!odom_initialized_) {
-                odom_initialized_ = true;
-                double curr_x = odom_msg.pose.pose.position.x;
-                double curr_y = odom_msg.pose.pose.position.y;
-                double curr_theta = getYaw(odom_msg); 
-                prev_pose_ = Pose(curr_x, curr_y, curr_theta);
-            }
+            // if (!odom_initialized_) {
+            //     odom_initialized_ = true;
+            //     double curr_x = odom_msg.pose.pose.position.x;
+            //     double curr_y = odom_msg.pose.pose.position.y;
+            //     double curr_theta = getYaw(odom_msg); 
+            //     prev_pose_ = Pose(curr_x, curr_y, curr_theta);
+            // }
 
             
             pre_motion_poses_.resize(num_particles_);
             for (int i = 0; i < num_particles_; i++) {
                 pre_motion_poses_[i] = Pose(particles_[i].x, particles_[i].y, particles_[i].theta);
             }
+            
  
         }
 
-        void scanCallback(const sensor_msgs::msg::LaserScan& scan) {
-            if (!odom_initialized_) return;
 
-            // just integrate first scan 
+        bool getRobotOdomPose(const builtin_interfaces::msg::Time& stamp, Pose& out) {
+            geometry_msgs::msg::TransformStamped t;
+            try {
+                t = tf_buffer_->lookupTransform(
+                    "odom", "base_footprint",
+                    tf2_ros::fromMsg(stamp), std::chrono::milliseconds(100));
+            } catch (const tf2::TransformException& ex) {
+                RCLCPP_WARN(this->get_logger(),
+                    "No odom->base_footprint at scan time, skipping scan: %s", ex.what());
+                return false;
+            }
+            out.x = t.transform.translation.x;
+            out.y = t.transform.translation.y;
+            out.theta = quatToYaw(
+                t.transform.rotation.x, t.transform.rotation.y,
+                t.transform.rotation.z, t.transform.rotation.w);
+            return true;
+        }
+
+        void scanCallback(const sensor_msgs::msg::LaserScan& scan) {
+            
+
+            // Pull the robot's odom pose at the SCAN's timestamp
+            Pose curr_pose;
+            if (!getRobotOdomPose(scan.header.stamp, curr_pose)) return;
+
+            // just integrate first scan
             if (!scan_initialized_) {
+                prev_pose_ = curr_pose;
                 for (Particle& particle : particles_) {
+                    
                     integrator_.integrateScan(particle.map, scan, particle.x, particle.y, particle.theta);                 
                     scan_initialized_ = true;
                 }
+                RCLCPP_INFO(
+                    this->get_logger(),
+                    " pose -> x: %.3f, y: %.3f, theta: %.3f",
+                    particles_[0].x,
+                    particles_[0].y,
+                    particles_[0].theta
+                );  
+                publishMapToOdom();
                 publishMap(particles_[0]);
                 return;
-            }
-
+            }                               
             // Only process scan if robot has moved enough
-            double curr_x = odom_msg_.pose.pose.position.x;
-            double curr_y = odom_msg_.pose.pose.position.y;
-            double curr_theta = getYaw(odom_msg_); 
-            Pose curr_pose(curr_x, curr_y, curr_theta);
+            double curr_x = curr_pose.x;
+            double curr_y = curr_pose.y;
+            double curr_theta = curr_pose.theta;
 
             double dx = curr_x - prev_pose_.x;
             double dy = curr_y - prev_pose_.y;
@@ -272,11 +305,10 @@ namespace fastslam {
 
             double total_weight = 0.0;
             Particle* best_particle = nullptr;
-
             #pragma omp parallel for reduction(+:total_weight) schedule(static)
             for (int i = 0; i < num_particles_; i++) {
                 Particle& particle = particles_[i];
-                // motion prediction based on odom — local to each thread (no race)
+                // motion prediction based on odom — local to each thread
                 Pose odom_predicted_pose = md_.applyMotionModel(
                     Pose(particle.x, particle.y, particle.theta), 
                     prev_pose_,
@@ -286,18 +318,12 @@ namespace fastslam {
                 particle.x = odom_predicted_pose.x;
                 particle.y = odom_predicted_pose.y;
                 particle.theta = odom_predicted_pose.theta;
-                // RCLCPP_INFO(
-                //     this->get_logger(),
-                //     "Predicted pose -> x: %.3f, y: %.3f, theta: %.3f",
-                //     particle.x,
-                //     particle.y,
-                //     particle.theta
-                // );
+                
                 ScanMatchResult smr;
                 double L[9];
 
                 // scan matching
-                smr = scan_matcher_.matchScan(particle, scan);
+                smr = scan_matcher_.matchScanCorrelative(particle, scan);
                 double best_x = smr.best_pose.x;
                 double best_y = smr.best_pose.y;
                 double best_theta = smr.best_pose.theta;
@@ -310,15 +336,15 @@ namespace fastslam {
                 std::vector<double> log_weights; log_weights.reserve(500);
                 double lmax = -std::numeric_limits<double>::infinity();
                 double lw, log_p_zt_xt, log_p_xt_ut;
-                double dx, dy, dtheta, drho;
-                for (double x = best_x-0.1; x < best_x+0.1; x+=0.025) {
-                    for (double y = best_y-0.1; y < best_y+0.1; y+=0.025) {
-                        for (double theta = best_theta-0.05; theta < best_theta+0.051; theta+=0.01) {
+                double dx, dy, dtheta;
+                for (double x = best_x-0.1; x < best_x+0.1; x+=0.04) {
+                    for (double y = best_y-0.1; y < best_y+0.1; y+=0.04) {
+                        for (double theta = best_theta-0.05; theta < best_theta+0.05; theta+=0.005) {
                             dx = x - particle.x;
                             dy = y - particle.y;
                             dtheta = std::atan2(std::sin(theta - particle.theta), std::cos(theta - particle.theta));
 
-                            log_p_zt_xt = scan_matcher_.computeLikelihood(particle.map, x, y, theta, scan);
+                            log_p_zt_xt = scan_matcher_.computeLikelihood(particle.map, x, y, theta, scan)/2;
                             log_p_xt_ut = md_.evaluateLogMotionError(
                                 pre_motion_poses_[i],
                                 Pose(x, y, theta),
@@ -359,7 +385,11 @@ namespace fastslam {
                 mean_pose.theta = std::atan2(total_sin/normalizing_term, total_cos/normalizing_term); 
 
                 // Covariance 
-                std::array<double,9> cov = {0,0,0, 0,0,0, 0,0,0};
+                std::array<double,9> cov = {
+                    0,0,0,
+                    0,0,0,
+                    0,0,0
+                };
                 
                 for (size_t i = 0; i < poses_sampled.size(); i++) {
                     dx = poses_sampled[i].x - mean_pose.x;
@@ -405,9 +435,29 @@ namespace fastslam {
                 
                 particle.x = sampled_x; 
                 particle.y = sampled_y;
-                particle.theta = sampled_theta;
-
+                particle.theta = normalizeAngle(sampled_theta);
                 particle.w += (std::log(normalizing_term) + lmax);
+                // particle.x = smr.best_pose.x; 
+                // particle.y = smr.best_pose.y;
+                // particle.theta = smr.best_pose.theta;
+                // particle.w += smr.best_likelihood;
+                if (particle.theta < -M_PI || particle.theta > M_PI) {
+                    RCLCPP_INFO(this->get_logger(), "BIG PROBLEM IN SCAN MATCHING, THETA: %.3f", particle.theta);
+                    RCLCPP_INFO(this->get_logger(), "BIG PROBLEM IN SCAN MATCHING, THETA: %.3f", particle.theta);
+                    RCLCPP_INFO(this->get_logger(), "BIG PROBLEM IN SCAN MATCHING, THETA: %.3f", particle.theta);
+                    RCLCPP_INFO(this->get_logger(), "BIG PROBLEM IN SCAN MATCHING, THETA: %.3f", particle.theta);
+                    RCLCPP_INFO(this->get_logger(), "BIG PROBLEM IN SCAN MATCHING, THETA: %.3f", particle.theta);
+                    RCLCPP_INFO(this->get_logger(), "BIG PROBLEM IN SCAN MATCHING, THETA: %.3f", particle.theta);
+                    RCLCPP_INFO(this->get_logger(), "BIG PROBLEM IN SCAN MATCHING, THETA: %.3f", particle.theta);
+                    RCLCPP_INFO(this->get_logger(), "BIG PROBLEM IN SCAN MATCHING, THETA: %.3f", particle.theta);
+                    RCLCPP_INFO(this->get_logger(), "BIG PROBLEM IN SCAN MATCHING, THETA: %.3f", particle.theta);
+                    RCLCPP_INFO(this->get_logger(), "BIG PROBLEM IN SCAN MATCHING, THETA: %.3f", particle.theta);
+                    RCLCPP_INFO(this->get_logger(), "BIG PROBLEM IN SCAN MATCHING, THETA: %.3f", particle.theta);
+                    RCLCPP_INFO(this->get_logger(), "BIG PROBLEM IN SCAN MATCHING, THETA: %.3f", particle.theta);
+                    RCLCPP_INFO(this->get_logger(), "BIG PROBLEM IN SCAN MATCHING, THETA: %.3f", particle.theta);
+                    RCLCPP_INFO(this->get_logger(), "BIG PROBLEM IN SCAN MATCHING, THETA: %.3f", particle.theta);
+                }
+
                 // RCLCPP_INFO(this->get_logger(), "   Particle %d weight: %.00005f", i, particle.w);
                 integrator_.integrateScan(particle.map, scan, particle.x, particle.y, particle.theta);
                 total_weight += particle.w;
