@@ -1,5 +1,6 @@
 #include "fastslam/scan_matcher.hpp" 
 #include "fastslam/angle_utils.hpp"
+#include "fastslam/pose.hpp"
 #include <cmath> 
 #include <cassert> 
 
@@ -7,19 +8,19 @@ namespace fastslam
 {
 
     ScanMatchResult ScanMatcher::matchScanCorrelative(
-        Particle& particle, 
-        const sensor_msgs::msg::LaserScan& scan
+        Particle& particle,
+        const LaserScan& scan
     ) {
 
+        Pose particle_pose = particle.poses.back(); 
+        double start_x = particle_pose.x - x_range_;
+        double end_x = particle_pose.x + x_range_;
         
-        double start_x = particle.x - x_range_;
-        double end_x = particle.x + x_range_;
-        
-        double start_y = particle.y - y_range_;
-        double end_y = particle.y + y_range_;
+        double start_y = particle_pose.y - y_range_;
+        double end_y = particle_pose.y + y_range_;
 
-        double start_theta = particle.theta - theta_range_;
-        double end_theta = particle.theta + theta_range_; 
+        double start_theta = particle_pose.theta - theta_range_;
+        double end_theta = particle_pose.theta + theta_range_; 
 
         double cell_size = particle.map.getMapParams().resolution;
 
@@ -69,9 +70,9 @@ namespace fastslam
 
     ScanMatchResult ScanMatcher::matchScanGradient(
         Particle& particle,
-        const sensor_msgs::msg::LaserScan& scan
+        const LaserScan& scan
     ) {
-        Pose current_pose(particle.x, particle.y, particle.theta);
+        Pose current_pose = particle.poses.back();
         double current_score = computeLikelihood(
             particle.map, current_pose.x, current_pose.y, current_pose.theta, scan
         );
@@ -118,8 +119,8 @@ namespace fastslam
 
     double ScanMatcher::computeLikelihood(
             OccupancyGridMap& map,
-            double x, double y, double theta, 
-            const sensor_msgs::msg::LaserScan& scan
+            double x, double y, double theta,
+            const LaserScan& scan
     ) {
         double p_rand = 1.0/scan.range_max; 
         double scan_x = x + laser_dx_ * std::cos(theta) - laser_dy_ * std::sin(theta);

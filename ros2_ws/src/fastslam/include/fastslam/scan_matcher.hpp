@@ -3,8 +3,8 @@
 #include "fastslam/pose.hpp" 
 #include "fastslam/particle.hpp"
 #include "fastslam/occupancy_grid_map.hpp"
-#include <sensor_msgs/msg/laser_scan.hpp>
-#include <array> 
+#include "fastslam/laser_scan.hpp"
+#include <array>
 
 namespace fastslam 
 {
@@ -42,7 +42,7 @@ namespace fastslam
             
             ScanMatchResult matchScanCorrelative(
                 Particle& particle,
-                const sensor_msgs::msg::LaserScan& scan
+                const LaserScan& scan
 
             );
 
@@ -53,14 +53,14 @@ namespace fastslam
             // step_size_xy_/step_size_theta_ as the terminal precision.
             ScanMatchResult matchScanGradient(
                 Particle& particle,
-                const sensor_msgs::msg::LaserScan& scan
+                const LaserScan& scan
             );
-            
+
             double computeLikelihood(
                 OccupancyGridMap& map,
-                double x, double y, double theta, 
-                const sensor_msgs::msg::LaserScan& scan
-            ); 
+                double x, double y, double theta,
+                const LaserScan& scan
+            );
 
         private:
 

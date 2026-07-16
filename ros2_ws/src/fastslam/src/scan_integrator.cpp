@@ -9,7 +9,7 @@ namespace fastslam
 
     void ScanIntegrator::integrateScan(
         OccupancyGridMap& map,
-        const sensor_msgs::msg::LaserScan& scan,
+        const LaserScan& scan,
         double robot_x, 
         double robot_y, 
         double robot_theta

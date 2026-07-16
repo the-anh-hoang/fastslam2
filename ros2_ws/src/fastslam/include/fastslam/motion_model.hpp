@@ -16,11 +16,10 @@ namespace fastslam
             double evaluateLogMotionError(Pose prev_pose, Pose candidate_pose, Pose odom_pred); 
 
 
-        private: 
+        private:
             double alpha_1_, alpha_2_, alpha_3_, alpha_4_;
-            std::mt19937 rng_;  
-            
-            double sampleNoise(double var);
+
+            static double sampleGaussian(double sigma);
     };
 }
 

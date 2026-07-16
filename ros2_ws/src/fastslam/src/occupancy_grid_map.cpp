@@ -74,18 +74,18 @@ namespace fastslam
         };
     }
 
-    ROSMsg OccupancyGridMap::toROSData() const {
-        ROSMsg ros_msg; 
+    GridData OccupancyGridMap::toGridData() const {
+        GridData grid;
         int min_x, min_y, max_x, max_y;
         getMapBoundingBox(min_x, min_y, max_x, max_y);
         int width = max_x - min_x;
         int height = max_y - min_y;
-        std::pair<double,double> world_origin = gridToWorldCoords(min_x, min_y); 
-        ros_msg.origin_x =  world_origin.first;
-        ros_msg.origin_y = world_origin.second; 
-        ros_msg.width = max_x - min_x;
-        ros_msg.height = max_y - min_y; 
-        ros_msg.data.resize(width*height,-1);
+        std::pair<double,double> world_origin = gridToWorldCoords(min_x, min_y);
+        grid.origin_x = world_origin.first;
+        grid.origin_y = world_origin.second;
+        grid.width = max_x - min_x;
+        grid.height = max_y - min_y;
+        grid.data.resize(width*height,-1);
 
 
         for (int x = min_x; x < max_x; x++) {
@@ -93,11 +93,11 @@ namespace fastslam
                 const OccupancyChunk* chunk = findChunk(x, y);
                 if (!chunk) continue;
                 if (chunk->isOccupied(localOffset(x), localOffset(y), 1)) {
-                    ros_msg.data[(y - min_y) * width + (x - min_x)] = 100;
+                    grid.data[(y - min_y) * width + (x - min_x)] = 100;
                 }
             }
         }
-        return ros_msg;
+        return grid;
     }
 
     MapParams OccupancyGridMap::getMapParams() const {

@@ -17,27 +17,27 @@ fastslam_node:
     use_sim_time: true 
 
 fastslam2_node:
-  # try divide by 2 
   ros__parameters:
     num_particles: 15
     map_chunk_size: 10.0
-    map_res: 0.1
+    map_res: 0.025
     ray_skip: 1
     a1: 0.1
-    a2: 0.5
-    a3: 0.5
-    a4: 0.5
-    scan_match_x_range: 0.1
-    scan_match_y_range: 0.1
+    a2: 0.1
+    a3: 0.1
+    a4: 0.1
+    scan_match_x_range: 0.05
+    scan_match_y_range: 0.05
     scan_match_theta_range: 0.15 # PI/6
     scan_match_step_xy: 0.01
     scan_match_step_theta: 0.01 # ~1 degs 
     z_hit: 0.80
-    std_hit: 0.05
+    std_hit: 0.04
     z_rand: 0.20
-    linear_update: 0.05
+    linear_update: 0.01
     angular_update: 0.05
     resample_threshold: 0.5
-    use_sim_time: false
+    traj_output_dir: "tmp"
+    use_sim_time: true
 
 

@@ -13,13 +13,11 @@ find_package(nav_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
-find_package(tf2_geometry_msgs REQUIRED)
-find_package(visualization_msgs REQUIRED)
-find_package(OpenCV REQUIRED)
 find_package(OpenMP REQUIRED)
 
-add_executable(fastslam2_node
-  src/fastslam2_node.cpp
+# Pure C++ SLAM engine — no ROS dependencies
+add_library(fastslam_core STATIC
+  src/fastslam2.cpp
   src/occupancy_grid_map.cpp
   src/cell.cpp
   src/scan_integrator.cpp
@@ -28,10 +26,16 @@ add_executable(fastslam2_node
   src/scan_matcher.cpp
 )
 
-target_include_directories(fastslam2_node PUBLIC
-  include
-  ${OpenCV_INCLUDE_DIRS}
+target_include_directories(fastslam_core PUBLIC include)
+
+target_link_libraries(fastslam_core PUBLIC OpenMP::OpenMP_CXX)
+
+# ROS2 node — plumbing only
+add_executable(fastslam2_node
+  src/fastslam2_node.cpp
 )
+
+target_link_libraries(fastslam2_node fastslam_core)
 
 ament_target_dependencies(fastslam2_node
   rclcpp
@@ -40,11 +44,6 @@ ament_target_dependencies(fastslam2_node
   geometry_msgs
   tf2
   tf2_ros
-)
-
-target_link_libraries(fastslam2_node
-  ${OpenCV_LIBS}
-  OpenMP::OpenMP_CXX
 )
 
 install(TARGETS fastslam2_node

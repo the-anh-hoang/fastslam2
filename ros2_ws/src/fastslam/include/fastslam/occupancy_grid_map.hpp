@@ -28,10 +28,10 @@ namespace fastslam
             {}
     };
 
-    struct ROSMsg {
-        std::vector<int8_t> data; 
-        float origin_x; 
-        float origin_y; 
+    struct GridData {
+        std::vector<int8_t> data;
+        float origin_x;
+        float origin_y;
         int width;
         int height;
     };
@@ -60,8 +60,8 @@ namespace fastslam
             // Convert cell x,y to  world coordiantes x,y 
             std::pair<double, double> gridToWorldCoords(int x, int y) const;
             
-            // Convert data_ from log odds to ROS OccupancyGrid message data
-            ROSMsg toROSData() const;
+            // Flatten the chunked log-odds map into a dense occupancy grid
+            GridData toGridData() const;
 
             MapParams getMapParams() const;
             

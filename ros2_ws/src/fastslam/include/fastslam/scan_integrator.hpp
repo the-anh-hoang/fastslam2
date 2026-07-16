@@ -1,7 +1,7 @@
 #ifndef FASTSLAM_SCAN_INTEGRATOR_HPP
 #define FASTSLAM_SCAN_INTEGRATOR_HPP
 #include <fastslam/occupancy_grid_map.hpp>
-#include <sensor_msgs/msg/laser_scan.hpp>
+#include "fastslam/laser_scan.hpp"
 
 namespace fastslam {
 
@@ -19,7 +19,7 @@ namespace fastslam {
             
             void integrateScan(
                 OccupancyGridMap& map,
-                const sensor_msgs::msg::LaserScan& scan,
+                const LaserScan& scan,
                 double robot_x,
                 double robot_y,
                 double robot_theta
