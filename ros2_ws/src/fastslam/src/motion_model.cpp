@@ -9,62 +9,59 @@ namespace fastslam
         return std::min(std::abs(normalizeAngle(rot)),
                         std::abs(normalizeAngle(rot - M_PI)));
     }
+    
     Pose MotionModel::applyMotionModel(Pose robot_pose, Pose prev_odom, Pose curr_odom, bool deterministic) {
-        if (deterministic) {
-            double delta_x = curr_odom.x - prev_odom.x;
-            double delta_y = curr_odom.y - prev_odom.y;
-            double delta_theta = normalizeAngle(curr_odom.theta - prev_odom.theta);
+        double delta_x = curr_odom.x - prev_odom.x;
+        double delta_y = curr_odom.y - prev_odom.y;
+        double delta_theta = normalizeAngle(curr_odom.theta - prev_odom.theta); 
+        
+        // Raw Kinematics
+        double delta_trans = std::sqrt(delta_x*delta_x + delta_y*delta_y);
+        // in place rotation, only account rot2 noise 
+        double delta_rot1;
+        if (delta_trans < 0.02)
+            delta_rot1 = 0.0;
+        else
+            delta_rot1 = normalizeAngle(std::atan2(delta_y, delta_x) - prev_odom.theta);
+        double delta_rot2 = normalizeAngle(delta_theta - delta_rot1);
 
-            // Raw Kinematics
-            double delta_trans = std::sqrt(delta_x*delta_x + delta_y*delta_y);
-            // in place rotation, only account rot2 noise
-            double delta_rot1;
-            if (delta_trans < 0.02)
-                delta_rot1 = 0.0;
-            else
-                delta_rot1 = normalizeAngle(std::atan2(delta_y, delta_x) - prev_odom.theta);
-            double delta_rot2 = normalizeAngle(delta_theta - delta_rot1);
-
-            double new_x     = robot_pose.x + delta_trans * std::cos(robot_pose.theta + delta_rot1);
-            double new_y     = robot_pose.y + delta_trans * std::sin(robot_pose.theta + delta_rot1);
-            double new_theta = normalizeAngle(robot_pose.theta + delta_rot1 + delta_rot2);
-            return Pose(new_x, new_y, new_theta);
-        }
-
-        // GMapping's MotionModel::drawFromMotion(p, pnew, pold): perturb the odom
-        // delta per-axis in prev_odom's frame, then compose onto the particle pose.
-        // Coefficients are stddev-style multipliers, not Thrun variances —
-        // roles: srr trans->trans (a3), str rot->trans (a4),
-        //        srt trans->rot   (a2), stt rot->rot   (a1)
-        double srr = alpha_3_, str = alpha_4_, srt = alpha_2_, stt = alpha_1_;
-        double sxy = 0.3 * srr;
-
-        // absoluteDifference(curr_odom, prev_odom)
-        double s = std::sin(prev_odom.theta), c = std::cos(prev_odom.theta);
-        double raw_dx = curr_odom.x - prev_odom.x;
-        double raw_dy = curr_odom.y - prev_odom.y;
-        double dx     =  c*raw_dx + s*raw_dy;
-        double dy     = -s*raw_dx + c*raw_dy;
-        double dtheta = normalizeAngle(curr_odom.theta - prev_odom.theta);
-
-        // sigmas come from the clean delta; cross-terms couple the axes
-        double noisy_dx = dx + sampleGaussian(
-            srr*std::abs(dx) + str*std::abs(dtheta) + sxy*std::abs(dy));
-        double noisy_dy = dy + sampleGaussian(
-            srr*std::abs(dy) + str*std::abs(dtheta) + sxy*std::abs(dx));
-        double noisy_dtheta = dtheta + sampleGaussian(
-            stt*std::abs(dtheta) + srt*std::sqrt(dx*dx + dy*dy));
-        noisy_dtheta = std::fmod(noisy_dtheta, 2.0*M_PI);
-        if (noisy_dtheta > M_PI) noisy_dtheta -= 2.0*M_PI;
-
-        // absoluteSum(robot_pose, noisy delta)
-        double ps = std::sin(robot_pose.theta), pc = std::cos(robot_pose.theta);
-        return Pose(
-            robot_pose.x + pc*noisy_dx - ps*noisy_dy,
-            robot_pose.y + ps*noisy_dx + pc*noisy_dy,
-            normalizeAngle(robot_pose.theta + noisy_dtheta)
+        // Noise penalty 
+        // if not moving backwards would explode delta rotations
+        // CREDIT: Nav2's motion model
+        double delta_rot1_noise = std::min(
+            std::abs(normalizeAngle(delta_rot1 - 0.0)),
+            std::abs(normalizeAngle(delta_rot1 - M_PI))
         );
-    }
+        double delta_rot2_noise = std::min(
+            std::abs(normalizeAngle(delta_rot2 - 0.0)),
+            std::abs(normalizeAngle(delta_rot2 - M_PI))
+        );
+
+        double noisy_rot1; 
+        double noisy_trans;
+        double noisy_rot2; 
+        if (deterministic) {
+            noisy_rot1 = delta_rot1;
+            noisy_trans = delta_trans;
+            noisy_rot2 = delta_rot2;
+        } else {
+            // Apply Noise
+            noisy_rot1  = delta_rot1 + sampleGaussian(
+                alpha_1_*delta_rot1_noise*delta_rot1_noise + alpha_2_*delta_trans*delta_trans
+            );
+            noisy_trans = delta_trans + sampleGaussian(
+                alpha_3_*delta_trans*delta_trans + alpha_4_*(delta_rot1_noise*delta_rot1_noise + delta_rot2_noise*delta_rot2_noise)
+            );
+            noisy_rot2  = delta_rot2  + sampleGaussian(
+                alpha_1_*delta_rot2_noise*delta_rot2_noise + alpha_2_*delta_trans*delta_trans
+            );
+        }
+        double new_x     = robot_pose.x + noisy_trans * std::cos(robot_pose.theta + noisy_rot1);
+        double new_y     = robot_pose.y + noisy_trans * std::sin(robot_pose.theta + noisy_rot1);
+        double new_theta = normalizeAngle(robot_pose.theta + noisy_rot1 + noisy_rot2);
+        
+        return Pose(new_x, new_y, new_theta); 
+    } 
 
     
 
