@@ -1,6 +1,6 @@
 fastslam2_node:
   ros__parameters:
-    num_particles: 40
+    num_particles: 20
     map_chunk_size: 24.0
     map_res: 0.025
     mode: "peak"
@@ -9,10 +9,10 @@ fastslam2_node:
     a2: 0.1
     a3: 0.1
     a4: 0.1
-    scan_match_x_range: 0.1
-    scan_match_y_range: 0.1
-    scan_match_theta_range: 0.15 # PI/6
-    scan_match_step_xy: 0.01
+    scan_match_x_range: 0.06
+    scan_match_y_range: 0.06
+    scan_match_theta_range: 0.1 # PI/6
+    scan_match_step_xy: 0.02
     scan_match_step_theta: 0.01 
     z_hit: 0.95
     std_hit: 0.04

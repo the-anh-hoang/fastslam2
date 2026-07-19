@@ -1,0 +1,23 @@
+{
+  "dataset": "datasets/intel.clf",
+  "algo": "gmapping",
+  "config": "configs/gmapping/intel.yaml",
+  "seed": 42,
+  "command": [
+    "/home/harry/dev/slam_isaacsim/ros2_ws/build/slam_gmapping/gmapping_clf_runner",
+    "/home/harry/dev/slam_isaacsim/datasets/intel.clf",
+    "--params",
+    "/home/harry/dev/slam_isaacsim/results/intel_gmapping_20260716-185122/config.yaml",
+    "--out",
+    "/home/harry/dev/slam_isaacsim/results/intel_gmapping_20260716-185122",
+    "--seed",
+    "42"
+  ],
+  "git": {
+    "commit": "1a38e7e8da9d0be90bfa7094f67037776f9924e9",
+    "dirty": true
+  },
+  "started": "2026-07-16T18:51:22",
+  "finished": "2026-07-16T18:59:57",
+  "exit_code": 0
+}

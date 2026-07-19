@@ -1,0 +1,23 @@
+{
+  "dataset": "datasets/mit-killian.clf",
+  "algo": "fastslam",
+  "config": "configs/fastslam/mit-killian.yaml",
+  "seed": 42,
+  "command": [
+    "/home/harry/dev/slam_isaacsim/ros2_ws/build/fastslam/clf_runner",
+    "/home/harry/dev/slam_isaacsim/datasets/mit-killian.clf",
+    "--params",
+    "/home/harry/dev/slam_isaacsim/results/mit-killian_fastslam_20260717-204704/config.yaml",
+    "--out",
+    "/home/harry/dev/slam_isaacsim/results/mit-killian_fastslam_20260717-204704",
+    "--seed",
+    "42"
+  ],
+  "git": {
+    "commit": "1a38e7e8da9d0be90bfa7094f67037776f9924e9",
+    "dirty": true
+  },
+  "started": "2026-07-17T20:47:04",
+  "finished": "2026-07-17T21:55:20",
+  "exit_code": 0
+}

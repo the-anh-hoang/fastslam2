@@ -1,0 +1,23 @@
+{
+  "dataset": "datasets/aces.clf",
+  "algo": "fastslam",
+  "config": "configs/fastslam/aces.yaml",
+  "seed": 42,
+  "command": [
+    "/home/harry/dev/slam_isaacsim/ros2_ws/build/fastslam/clf_runner",
+    "/home/harry/dev/slam_isaacsim/datasets/aces.clf",
+    "--params",
+    "/home/harry/dev/slam_isaacsim/results/aces_fastslam_20260716-190855/config.yaml",
+    "--out",
+    "/home/harry/dev/slam_isaacsim/results/aces_fastslam_20260716-190855",
+    "--seed",
+    "42"
+  ],
+  "git": {
+    "commit": "1a38e7e8da9d0be90bfa7094f67037776f9924e9",
+    "dirty": true
+  },
+  "started": "2026-07-16T19:08:55",
+  "finished": "2026-07-16T19:25:01",
+  "exit_code": 0
+}

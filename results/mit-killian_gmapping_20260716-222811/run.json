@@ -1,0 +1,23 @@
+{
+  "dataset": "datasets/mit-killian.clf",
+  "algo": "gmapping",
+  "config": "configs/gmapping/mit-killian.yaml",
+  "seed": 42,
+  "command": [
+    "/home/harry/dev/slam_isaacsim/ros2_ws/build/slam_gmapping/gmapping_clf_runner",
+    "/home/harry/dev/slam_isaacsim/datasets/mit-killian.clf",
+    "--params",
+    "/home/harry/dev/slam_isaacsim/results/mit-killian_gmapping_20260716-222811/config.yaml",
+    "--out",
+    "/home/harry/dev/slam_isaacsim/results/mit-killian_gmapping_20260716-222811",
+    "--seed",
+    "42"
+  ],
+  "git": {
+    "commit": "1a38e7e8da9d0be90bfa7094f67037776f9924e9",
+    "dirty": true
+  },
+  "started": "2026-07-16T22:28:11",
+  "finished": "2026-07-16T23:09:58",
+  "exit_code": 0
+}
