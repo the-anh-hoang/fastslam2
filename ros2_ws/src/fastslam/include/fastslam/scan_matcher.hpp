@@ -46,6 +46,13 @@ namespace fastslam
 
             );
 
+            // Single-stage grid search at step_size_* over the full ranges —
+            // the matcher of commit 5d284d2 ("best setup for mit-killian")
+            ScanMatchResult matchScanGrid(
+                Particle& particle,
+                const LaserScan& scan
+            );
+
             // Hill-climbing scan match (the scan registration of Grisetti et
             // al. / GMapping's optimize()): greedy axis moves from the
             // particle's pose, halving the step when no move improves.

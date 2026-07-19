@@ -20,6 +20,24 @@ namespace fastslam
         float map_chunk_size = 24.0f;   // m
         float map_res = 0.03f;          // m/cell
 
+        // modes
+        std::string mode = "proposal"; // proposal/peak
+        std::string matcher = "correlative"; // correlative/gradient
+
+        // RNG seed; < 0 means seed from std::random_device (non-reproducible)
+        long seed = -1;
+
+        // Weight tempering gains: weights are normalized with
+        // exp((w - w_max) / (gain * N)) for N_eff and resampling respectively
+        double neff_gain = 5.0;
+        double resample_gain = 3.0;
+
+        // Proposal-mode sampling window around the scan-match mode
+        double proposal_range_xy = 0.1;
+        double proposal_step_xy = 0.025;
+        double proposal_range_theta = 0.05;
+        double proposal_step_theta = 0.01;
+
         // Odometry motion model noise
         double a1 = 0.01, a2 = 0.01, a3 = 0.01, a4 = 0.01;
 
@@ -80,7 +98,6 @@ namespace fastslam
             ScanIntegrator integrator_;
             ScanMatcher scan_matcher_;
 
-            std::random_device rd_;
             std::mt19937 gen_;
             std::normal_distribution<double> std_normal_{0.0,1.0};
 

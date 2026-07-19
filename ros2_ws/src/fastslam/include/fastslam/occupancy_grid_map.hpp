@@ -68,8 +68,17 @@ namespace fastslam
             
         
         private:
-            std::unordered_map<int64_t, OccupancyChunk> chunks_; 
+            std::unordered_map<int64_t, OccupancyChunk> chunks_;
             MapParams map_params_;
+
+            // kernelSearch memo: occupied-cell means per query cell, in kernel
+            // iteration order. Valid only while the map is unmodified —
+            // updateHit bumps map_version_, and the first query after that
+            // clears the cache. One thread touches a map at a time.
+            struct KernelCandidates { int n = 0; double pts[9][2]; };
+            mutable std::unordered_map<int64_t, KernelCandidates> kernel_cache_;
+            mutable uint64_t kernel_cache_version_ = 0;
+            uint64_t map_version_ = 1;
 
             float max_dist_ = 0.0f; 
             bool distance_dirty_ = true;
