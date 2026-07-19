@@ -13,7 +13,9 @@ namespace fastslam
 {
 
     FastSlam2::FastSlam2(const FastSlam2Config& config)
-        : config_(config), gen_(rd_())
+        : config_(config),
+          gen_(config.seed >= 0 ? static_cast<std::mt19937::result_type>(config.seed)
+                                : std::mt19937::result_type{std::random_device{}()})
     {
         MapParams mp(config_.map_chunk_size, config_.map_res);
         md_ = MotionModel(config_.a1, config_.a2, config_.a3, config_.a4);
@@ -98,12 +100,15 @@ namespace fastslam
 
         double total_weight = 0.0;
         for (Particle& p : particles_) {
+            bool deterministic = false; 
+            if (config_.mode == "proposal") {deterministic = true;}
             Pose odom_predicted_pose = md_.applyMotionModel(
                 p.poses.back(),
                 prev_pose_,
                 curr_pose,
-                true
+                deterministic
             );
+            
             p.poses.push_back(
                 Pose(
                     odom_predicted_pose.x,
@@ -121,123 +126,138 @@ namespace fastslam
             double L[9];
 
             // scan matching
-            smr = scan_matcher_.matchScanCorrelative(particle, scan);
+            if (config_.matcher == "gradient") {
+                smr = scan_matcher_.matchScanGradient(particle, scan);
+            } else if (config_.matcher == "grid") {
+                smr = scan_matcher_.matchScanGrid(particle, scan);
+            } else {
+                smr = scan_matcher_.matchScanCorrelative(particle, scan);
+            }
             double best_x = smr.best_pose.x;
             double best_y = smr.best_pose.y;
             double best_theta = smr.best_pose.theta;
             particle_scan_match_ll[i] = smr.best_likelihood;
             // TODO: MISSING CASE FOR FAILED SCAN MATCHER
+            
+            if (config_.mode == "proposal") {
+                std::vector<Pose> poses_sampled; poses_sampled.reserve(500);
+                std::vector<double> log_weights; log_weights.reserve(500);
+                double lmax = -std::numeric_limits<double>::infinity();
+                double lw, log_p_zt_xt, log_p_xt_ut;
+                double dx, dy, dtheta;
+                Pose particle_pose = particle.poses.back();
+                const double pr_xy = config_.proposal_range_xy, ps_xy = config_.proposal_step_xy;
+                const double pr_th = config_.proposal_range_theta, ps_th = config_.proposal_step_theta;
+                for (double x = best_x-pr_xy; x < best_x+pr_xy; x+=ps_xy) {
+                    for (double y = best_y-pr_xy; y < best_y+pr_xy; y+=ps_xy) {
+                        for (double theta = best_theta-pr_th; theta < best_theta+pr_th; theta+=ps_th) {
+                            dx = x - particle_pose.x;
+                            dy = y - particle_pose.y;
+                            dtheta = std::atan2(std::sin(theta - particle_pose.theta), std::cos(theta - particle_pose.theta));
 
-            // -- SAMPLE AROUND THE MODE --
+                            log_p_zt_xt = scan_matcher_.computeLikelihood(particle.map, x, y, theta, scan)/3;
+                            log_p_xt_ut = md_.evaluateLogMotionError(
+                                particle.poses[particle.poses.size() - 2],
+                                Pose(x, y, theta),
+                                particle_pose
+                            ); // how likely is z,y,theta based on particle movement from poses[-2] to poses[-1] (curr)
 
-            std::vector<Pose> poses_sampled; poses_sampled.reserve(500);
-            std::vector<double> log_weights; log_weights.reserve(500);
-            double lmax = -std::numeric_limits<double>::infinity();
-            double lw, log_p_zt_xt, log_p_xt_ut;
-            double dx, dy, dtheta;
-            Pose particle_pose = particle.poses.back();
-            for (double x = best_x-0.1; x < best_x+0.1; x+=0.025) {
-                for (double y = best_y-0.1; y < best_y+0.1; y+=0.025) {
-                    for (double theta = best_theta-0.05; theta < best_theta+0.05; theta+=0.01) {
-                        dx = x - particle_pose.x;
-                        dy = y - particle_pose.y;
-                        dtheta = std::atan2(std::sin(theta - particle_pose.theta), std::cos(theta - particle_pose.theta));
+                            lw = (log_p_zt_xt + log_p_xt_ut);
+                            poses_sampled.push_back(Pose(x,y,normalizeAngle(theta)));
+                            log_weights.push_back(lw);
 
-                        log_p_zt_xt = scan_matcher_.computeLikelihood(particle.map, x, y, theta, scan);
-                        log_p_xt_ut = md_.evaluateLogMotionError(
-                            particle.poses[particle.poses.size() - 2],
-                            Pose(x, y, theta),
-                            particle_pose
-                        ); // how likely is z,y,theta based on particle movement from poses[-2] to poses[-1] (curr)
-
-                        lw = (log_p_zt_xt + log_p_xt_ut);
-                        poses_sampled.push_back(Pose(x,y,normalizeAngle(theta)));
-                        log_weights.push_back(lw);
-
-                        if (lw > lmax) lmax = lw;
+                            if (lw > lmax) lmax = lw;
+                        }
                     }
                 }
-            }
 
+                // -- Computing the GAUSSIAN PROPOSAL --
+                Pose mean_pose(0.0,0.0,0.0);
+                double normalizing_term = 0.0;
+                std::vector<double> xj_probs;
+                xj_probs.reserve(poses_sampled.size());
+                double total_sin = 0, total_cos = 0;
+                for (size_t j = 0; j < poses_sampled.size(); j++) {
+                    double p = std::exp(log_weights[j] - lmax);
+                    xj_probs.push_back(p);
+                    mean_pose.x += p*poses_sampled[j].x;
+                    mean_pose.y += p*poses_sampled[j].y;
+                    total_sin += p*std::sin(poses_sampled[j].theta);
+                    total_cos += p*std::cos(poses_sampled[j].theta);
+                    normalizing_term += p;
+                }
 
-            // -- Computing the GAUSSIAN PROPOSAL --
-            Pose mean_pose(0.0,0.0,0.0);
-            double normalizing_term = 0.0;
-            std::vector<double> xj_probs;
-            xj_probs.reserve(poses_sampled.size());
-            double total_sin = 0, total_cos = 0;
-            for (size_t j = 0; j < poses_sampled.size(); j++) {
-                double p = std::exp(log_weights[j] - lmax);
-                xj_probs.push_back(p);
-                mean_pose.x += p*poses_sampled[j].x;
-                mean_pose.y += p*poses_sampled[j].y;
-                total_sin += p*std::sin(poses_sampled[j].theta);
-                total_cos += p*std::cos(poses_sampled[j].theta);
-                normalizing_term += p;
-            }
+                mean_pose.x /= normalizing_term; mean_pose.y /= normalizing_term;
+                mean_pose.theta = std::atan2(total_sin/normalizing_term, total_cos/normalizing_term);
 
-            mean_pose.x /= normalizing_term; mean_pose.y /= normalizing_term;
-            mean_pose.theta = std::atan2(total_sin/normalizing_term, total_cos/normalizing_term);
+                // Covariance
+                std::array<double,9> cov = {
+                    0,0,0,
+                    0,0,0,
+                    0,0,0
+                };
 
-            // Covariance
-            std::array<double,9> cov = {
-                0,0,0,
-                0,0,0,
-                0,0,0
-            };
+                for (size_t j = 0; j < poses_sampled.size(); j++) {
+                    dx = poses_sampled[j].x - mean_pose.x;
+                    dy = poses_sampled[j].y - mean_pose.y;
+                    dtheta = std::atan2(
+                        std::sin(poses_sampled[j].theta - mean_pose.theta),
+                        std::cos(poses_sampled[j].theta - mean_pose.theta)
+                    );
+                    cov[0] += xj_probs[j] * dx     * dx;
+                    cov[1] += xj_probs[j] * dx     * dy;
+                    cov[2] += xj_probs[j] * dx     * dtheta;
+                    cov[3] += xj_probs[j] * dy     * dx;
+                    cov[4] += xj_probs[j] * dy     * dy;
+                    cov[5] += xj_probs[j] * dy     * dtheta;
+                    cov[6] += xj_probs[j] * dtheta * dx;
+                    cov[7] += xj_probs[j] * dtheta * dy;
+                    cov[8] += xj_probs[j] * dtheta * dtheta;
+                }
 
-            for (size_t j = 0; j < poses_sampled.size(); j++) {
-                dx = poses_sampled[j].x - mean_pose.x;
-                dy = poses_sampled[j].y - mean_pose.y;
-                dtheta = std::atan2(
-                    std::sin(poses_sampled[j].theta - mean_pose.theta),
-                    std::cos(poses_sampled[j].theta - mean_pose.theta)
+                for (int j = 0; j < 9; j++) cov[j] /= normalizing_term;
+                cov[0] += 1e-6; cov[4] += 1e-6; cov[8] += 1e-6;
+
+                // Store diagnostics
+                particle_eta[i] = std::log(normalizing_term) + lmax;
+                particle_cov_xx[i] = cov[0];
+                particle_cov_yy[i] = cov[4];
+                particle_cov_tt[i] = cov[8];
+
+                // -- SAMPLING NEW POSE (CHOLESKY) --
+                L[0] = std::sqrt(cov[0]);
+                L[3] = cov[3] / L[0];
+                L[4] = std::sqrt(cov[4] - L[3]*L[3]);
+                L[6] = cov[6] / L[0];
+                L[7] = (cov[7] - L[6]*L[3]) / L[4];
+                L[8] = std::sqrt(cov[8] - L[6]*L[6] - L[7]*L[7]);
+                double z0 = randoms[i*3];
+                double z1 = randoms[i*3 + 1];
+                double z2 = randoms[i*3 + 2];
+
+                double sampled_x = mean_pose.x + L[0]*z0;
+                double sampled_y = mean_pose.y + L[3]*z0 + L[4]*z1;
+                double sampled_theta = mean_pose.theta + L[6]*z0  + L[7]*z1 + L[8]*z2;
+
+                particle.poses.back() = Pose(
+                    sampled_x,
+                    sampled_y,
+                    normalizeAngle(sampled_theta)
                 );
-                cov[0] += xj_probs[j] * dx     * dx;
-                cov[1] += xj_probs[j] * dx     * dy;
-                cov[2] += xj_probs[j] * dx     * dtheta;
-                cov[3] += xj_probs[j] * dy     * dx;
-                cov[4] += xj_probs[j] * dy     * dy;
-                cov[5] += xj_probs[j] * dy     * dtheta;
-                cov[6] += xj_probs[j] * dtheta * dx;
-                cov[7] += xj_probs[j] * dtheta * dy;
-                cov[8] += xj_probs[j] * dtheta * dtheta;
+                particle.w += (std::log(normalizing_term) + lmax);
+            } else if (config_.mode == "peak"){
+                particle.poses.back() = Pose(
+                    best_x,
+                    best_y,
+                    best_theta
+                );
+                particle.w += smr.best_likelihood; 
+            } else {
+                throw std::invalid_argument("Unknown mode: " + config_.mode);
             }
-
-            for (int j = 0; j < 9; j++) cov[j] /= normalizing_term;
-            cov[0] += 1e-6; cov[4] += 1e-6; cov[8] += 1e-6;
-
-            // Store diagnostics
-            particle_eta[i] = std::log(normalizing_term) + lmax;
-            particle_cov_xx[i] = cov[0];
-            particle_cov_yy[i] = cov[4];
-            particle_cov_tt[i] = cov[8];
-
-            // -- SAMPLING NEW POSE (CHOLESKY) --
-            L[0] = std::sqrt(cov[0]);
-            L[3] = cov[3] / L[0];
-            L[4] = std::sqrt(cov[4] - L[3]*L[3]);
-            L[6] = cov[6] / L[0];
-            L[7] = (cov[7] - L[6]*L[3]) / L[4];
-            L[8] = std::sqrt(cov[8] - L[6]*L[6] - L[7]*L[7]);
-            double z0 = randoms[i*3];
-            double z1 = randoms[i*3 + 1];
-            double z2 = randoms[i*3 + 2];
-
-            double sampled_x = mean_pose.x + L[0]*z0;
-            double sampled_y = mean_pose.y + L[3]*z0 + L[4]*z1;
-            double sampled_theta = mean_pose.theta + L[6]*z0  + L[7]*z1 + L[8]*z2;
-
-            particle.poses.back() = Pose(
-                sampled_x,
-                sampled_y,
-                normalizeAngle(sampled_theta)
-            );
-            particle.w += (std::log(normalizing_term) + lmax);
-
-            particle_pose = particle.poses.back();
+            Pose particle_pose = particle.poses.back(); 
             integrator_.integrateScan(particle.map, scan, particle_pose.x, particle_pose.y, particle_pose.theta);
-            total_weight += particle.w;
+            total_weight += particle.w;            
         }
         prev_pose_ = curr_pose;
 
@@ -248,7 +268,7 @@ namespace fastslam
         std::vector<double> normalized_w(num_particles);
         double sum_w = 0.0;
         for (int i = 0; i < num_particles; i++) {
-            normalized_w[i] = std::exp((particles_[i].w - max_w)/ (5.0*num_particles));
+            normalized_w[i] = std::exp((particles_[i].w - max_w)/ (config_.neff_gain*num_particles));
             sum_w += normalized_w[i];
         }
         for (int i = 0; i < num_particles; i++) normalized_w[i] /= sum_w;
@@ -337,7 +357,7 @@ namespace fastslam
         std::vector<double> linear_w(num_particles);
         double sum_w = 0.0;
         for (int i = 0; i < num_particles; i++) {
-            linear_w[i] = std::exp((particles_[i].w - max_w) / (3.0*num_particles));
+            linear_w[i] = std::exp((particles_[i].w - max_w) / (config_.resample_gain*num_particles));
             sum_w += linear_w[i];
         }
 

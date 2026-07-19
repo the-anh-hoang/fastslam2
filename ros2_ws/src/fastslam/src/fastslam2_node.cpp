@@ -29,13 +29,21 @@ namespace fastslam {
             this->declare_parameter("num_particles", 3);
             this->declare_parameter("map_chunk_size", 24.0f);
             this->declare_parameter("map_res", 0.03f); // (m/cell)
+            this->declare_parameter("mode", "proposal");
+            this->declare_parameter("matcher", "correlative");
+            this->declare_parameter("neff_gain", 5.0);
+            this->declare_parameter("resample_gain", 3.0);
+            this->declare_parameter("proposal_range_xy", 0.1);
+            this->declare_parameter("proposal_step_xy", 0.025);
+            this->declare_parameter("proposal_range_theta", 0.05);
+            this->declare_parameter("proposal_step_theta", 0.01);
             this->declare_parameter("a1", 0.01);
             this->declare_parameter("a2", 0.01);
             this->declare_parameter("a3", 0.01);
             this->declare_parameter("a4", 0.01);
             this->declare_parameter("scan_match_x_range", 0.09);
             this->declare_parameter("scan_match_y_range", 0.09);
-            this->declare_parameter("scan_match_theta_range", M_PI/4); // quite excessive
+            this->declare_parameter("scan_match_theta_range", M_PI/6); // quite excessive
             this->declare_parameter("scan_match_step_xy", 0.03);
             this->declare_parameter("scan_match_step_theta", 0.02);
             this->declare_parameter("ray_skip", 5);
@@ -52,6 +60,14 @@ namespace fastslam {
             config.num_particles = this->get_parameter("num_particles").as_int();
             config.map_chunk_size = static_cast<float>(this->get_parameter("map_chunk_size").as_double());
             config.map_res = static_cast<float>(this->get_parameter("map_res").as_double());
+            config.mode = this->get_parameter("mode").as_string();
+            config.matcher = this->get_parameter("matcher").as_string();
+            config.neff_gain = this->get_parameter("neff_gain").as_double();
+            config.resample_gain = this->get_parameter("resample_gain").as_double();
+            config.proposal_range_xy = this->get_parameter("proposal_range_xy").as_double();
+            config.proposal_step_xy = this->get_parameter("proposal_step_xy").as_double();
+            config.proposal_range_theta = this->get_parameter("proposal_range_theta").as_double();
+            config.proposal_step_theta = this->get_parameter("proposal_step_theta").as_double();
             config.a1 = this->get_parameter("a1").as_double();
             config.a2 = this->get_parameter("a2").as_double();
             config.a3 = this->get_parameter("a3").as_double();
