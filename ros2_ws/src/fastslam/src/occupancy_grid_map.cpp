@@ -11,7 +11,8 @@ namespace fastslam
     }
 
     void OccupancyGridMap::updateHit(double x_world, double y_world) {
-        auto [x_grid, y_grid] = worldToGridCoords(x_world, y_world); 
+        map_version_++;
+        auto [x_grid, y_grid] = worldToGridCoords(x_world, y_world);
         OccupancyChunk& chunk = getOrCreateChunk(x_grid, y_grid);
         int lx_grid = localOffset(x_grid);
         int ly_grid = localOffset(y_grid);
@@ -29,25 +30,64 @@ namespace fastslam
 
     std::optional<std::pair<double, double>> OccupancyGridMap::kernelSearch(double x_world, double y_world, int kernel_size) const {
         auto [x_grid, y_grid] = worldToGridCoords(x_world, y_world);
-        const OccupancyChunk* chunk;
-        double closest_dist = std::numeric_limits<double>::infinity(); 
-        std::optional<std::pair<double, double>> closest_point;
-        std::optional<std::pair<double, double>> candidate_point; 
-        for (int dx = -kernel_size; dx <= kernel_size; dx++) {
-            for (int dy = -kernel_size; dy <= kernel_size; dy++) {
-                chunk = findChunk(x_grid+dx, y_grid+dy);
-                if (!chunk) continue;
-                candidate_point = chunk->getMean(localOffset(x_grid+dx), localOffset(y_grid+dy));
-                if (!candidate_point) continue; 
-                auto [x,y] = *candidate_point;
-                double dist = sqrt((x-x_world)*(x-x_world) + (y-y_world)*(y-y_world));
-                if (dist < closest_dist) {
-                    closest_dist = dist;
-                    closest_point = {x,y}; 
+
+        // The candidate set depends only on the query cell; the nearest-mean
+        // selection below depends on the exact query point. Memoize the
+        // candidates (kernel_size 1 fits KernelCandidates) and keep the
+        // per-query selection.
+        const KernelCandidates* cand = nullptr;
+        KernelCandidates local;
+        if (kernel_size == 1) {
+            if (kernel_cache_version_ != map_version_) {
+                kernel_cache_.clear();
+                kernel_cache_version_ = map_version_;
+            }
+            auto it = kernel_cache_.find(packKey(x_grid, y_grid));
+            if (it != kernel_cache_.end()) cand = &it->second;
+        }
+        if (!cand) {
+            // neighbors usually share a chunk — reuse the last resolved pointer
+            const OccupancyChunk* chunk = nullptr;
+            int last_cx = std::numeric_limits<int>::min();
+            int last_cy = std::numeric_limits<int>::min();
+            for (int dx = -kernel_size; dx <= kernel_size; dx++) {
+                for (int dy = -kernel_size; dy <= kernel_size; dy++) {
+                    int cx = chunkIndex(x_grid+dx);
+                    int cy = chunkIndex(y_grid+dy);
+                    if (cx != last_cx || cy != last_cy) {
+                        auto cit = chunks_.find(packKey(cx, cy));
+                        chunk = (cit == chunks_.end()) ? nullptr : &cit->second;
+                        last_cx = cx; last_cy = cy;
+                    }
+                    if (!chunk) continue;
+                    auto candidate_point = chunk->getMean(localOffset(x_grid+dx), localOffset(y_grid+dy));
+                    if (!candidate_point) continue;
+                    if (local.n < 9) {
+                        local.pts[local.n][0] = candidate_point->first;
+                        local.pts[local.n][1] = candidate_point->second;
+                        local.n++;
+                    }
                 }
             }
+            if (kernel_size == 1) {
+                cand = &(kernel_cache_[packKey(x_grid, y_grid)] = local);
+            } else {
+                cand = &local;
+            }
         }
-        return closest_point; 
+
+        double closest_dist = std::numeric_limits<double>::infinity();
+        std::optional<std::pair<double, double>> closest_point;
+        for (int i = 0; i < cand->n; i++) {
+            double x = cand->pts[i][0];
+            double y = cand->pts[i][1];
+            double dist = sqrt((x-x_world)*(x-x_world) + (y-y_world)*(y-y_world));
+            if (dist < closest_dist) {
+                closest_dist = dist;
+                closest_point = std::pair<double,double>{x, y};
+            }
+        }
+        return closest_point;
     }
         
         
