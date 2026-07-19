@@ -30,6 +30,12 @@ target_include_directories(fastslam_core PUBLIC include)
 
 target_link_libraries(fastslam_core PUBLIC OpenMP::OpenMP_CXX)
 
+add_executable(clf_runner
+  src/clf_runner.cpp
+)
+
+target_link_libraries(clf_runner fastslam_core)
+
 # ROS2 node — plumbing only
 add_executable(fastslam2_node
   src/fastslam2_node.cpp
@@ -46,11 +52,11 @@ ament_target_dependencies(fastslam2_node
   tf2_ros
 )
 
-install(TARGETS fastslam2_node
+install(TARGETS fastslam2_node clf_runner
   DESTINATION lib/${PROJECT_NAME}
 )
 
-install(DIRECTORY config launch
+install(DIRECTORY launch
   DESTINATION share/${PROJECT_NAME}
 )
 
