@@ -42,8 +42,7 @@ namespace fastslam
             explicit OccupancyGridMap(const MapParams& params);
 
             // Update cell's log odds value
-            // it will be occupancygridmap job to find the chunk
-            // and cell 
+            // it will be occupancygridmap job to find the chunk and cell 
             void updateHit(double x_world, double y_world);
             
             // Get cell's center of mass
@@ -71,10 +70,6 @@ namespace fastslam
             std::unordered_map<int64_t, OccupancyChunk> chunks_;
             MapParams map_params_;
 
-            // kernelSearch memo: occupied-cell means per query cell, in kernel
-            // iteration order. Valid only while the map is unmodified —
-            // updateHit bumps map_version_, and the first query after that
-            // clears the cache. One thread touches a map at a time.
             struct KernelCandidates { int n = 0; double pts[9][2]; };
             mutable std::unordered_map<int64_t, KernelCandidates> kernel_cache_;
             mutable uint64_t kernel_cache_version_ = 0;

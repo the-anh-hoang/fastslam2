@@ -8,12 +8,8 @@
 
 namespace fastslam 
 {
-    // The Gaussian fit 
-    struct ScanMatchResult { 
-        // double total_region_w; 
-        // Pose mean;  
-        Pose best_pose;  
-        // std::array<double, 9> cov;  
+    struct ScanMatchResult {  
+        Pose best_pose;    
         double best_likelihood;
 
         ScanMatchResult() {}
@@ -46,18 +42,12 @@ namespace fastslam
 
             );
 
-            // Single-stage grid search at step_size_* over the full ranges —
-            // the matcher of commit 5d284d2 ("best setup for mit-killian")
             ScanMatchResult matchScanGrid(
                 Particle& particle,
                 const LaserScan& scan
             );
 
-            // Hill-climbing scan match (the scan registration of Grisetti et
-            // al. / GMapping's optimize()): greedy axis moves from the
-            // particle's pose, halving the step when no move improves.
-            // x_range_/theta_range_ act as the initial step (capture reach),
-            // step_size_xy_/step_size_theta_ as the terminal precision.
+
             ScanMatchResult matchScanGradient(
                 Particle& particle,
                 const LaserScan& scan

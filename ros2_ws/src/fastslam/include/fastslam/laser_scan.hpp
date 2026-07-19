@@ -4,8 +4,8 @@
 
 namespace fastslam
 {
-    // Plain laser scan, mirrors the fields of sensor_msgs/LaserScan the
-    // engine actually uses. The ROS node converts at the boundary.
+    // mirrors the fields of sensor_msgs/LaserScan the
+    // fastslam core actually uses. The ROS node converts at the boundary.
     struct LaserScan {
         double range_min = 0.0;
         double range_max = 0.0;

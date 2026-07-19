@@ -22,14 +22,12 @@ namespace fastslam
 
         // modes
         std::string mode = "proposal"; // proposal/peak
-        std::string matcher = "correlative"; // correlative/gradient
+        std::string matcher = "correlative"; // correlative/gradient/grid
 
-        // RNG seed; < 0 means seed from std::random_device (non-reproducible)
         long seed = -1;
 
-        // Weight tempering gains: weights are normalized with
-        // exp((w - w_max) / (gain * N)) for N_eff and resampling respectively
-        double neff_gain = 5.0;
+      
+        double neff_gain = 3.0;
         double resample_gain = 3.0;
 
         // Proposal-mode sampling window around the scan-match mode
@@ -38,10 +36,10 @@ namespace fastslam
         double proposal_range_theta = 0.05;
         double proposal_step_theta = 0.01;
 
-        // Odometry motion model noise
+        // motion model
         double a1 = 0.01, a2 = 0.01, a3 = 0.01, a4 = 0.01;
 
-        // Laser mount offset in the robot base frame
+        // laser mount offset in the robot base frame
         double laser_dx = 0.0, laser_dy = 0.0, laser_dtheta = 0.0;
 
         int ray_skip = 5;
@@ -52,7 +50,7 @@ namespace fastslam
         double scan_match_step_theta = 0.02;
         double z_hit = 0.8, std_hit = 0.2, z_rand = 0.2;
 
-        // Motion gate: process a scan only after moving this far
+        // update rate, in meters and rad
         double linear_update = 0.5;
         double angular_update = 0.2;
         double resample_threshold = 0.5;
@@ -62,7 +60,6 @@ namespace fastslam
         enum class Status { Skipped, Initialized, Updated };
         Status status = Status::Skipped;
 
-        // Diagnostics, only meaningful when status == Updated
         double n_eff = 0.0, n_eff_ratio = 0.0, spread = 0.0;
         double min_ll = 0.0, avg_ll = 0.0, max_ll = 0.0;      // scan-match log-likelihoods
         double avg_cov_xx = 0.0, avg_cov_yy = 0.0, avg_cov_tt = 0.0;
@@ -75,20 +72,16 @@ namespace fastslam
         double duration_ms = 0.0;
     };
 
-    // FastSLAM 2.0 particle filter. Pure C++ — consumers feed it odometry
-    // poses and laser scans and read back particles/maps.
+
     class FastSlam2 {
         public:
             explicit FastSlam2(const FastSlam2Config& config);
 
-            // odom_pose: robot pose in the odom frame at the scan's time.
-            // timestamp: scan time in seconds, used only for trajectory logging.
             UpdateResult processScan(const LaserScan& scan, const Pose& odom_pose, double timestamp);
 
             const Particle& bestParticle() const;
             const std::vector<Particle>& particles() const { return particles_; }
 
-            // Write fastslam.tum (best particle trajectory) and odom.tum into dir
             void writeTrajectories(const std::string& dir) const;
 
         private:
@@ -106,12 +99,10 @@ namespace fastslam
             bool scan_initialized_ = false;
             Pose prev_pose_;
 
-            // Trajectory logging — one entry per processed scan, so traj_stamps_[k]
-            // pairs with Particle::poses[k+1] (poses[0] is the initial pose)
+        
             std::vector<double> traj_stamps_;
             std::vector<Pose> odom_traj_;
 
-            // Tracking
             int scan_count_ = 0;
             int resample_count_ = 0;
             double total_distance_ = 0.0;
