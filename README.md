@@ -55,9 +55,9 @@ problem-level parameters are matched per dataset where applicable: particle coun
 
 | Trajectory | Trans. mean $\pm$ std (m) | RMSE (m) | Max (m) | Rot. mean (deg) |
 |---|---|---|---|---|
-| FastSLAM 2.0 | 0.049 $\pm$ 0.057 | 0.075 | 0.33 | 1.00 |
-| GMapping | 0.064 $\pm$ 0.064 | 0.090 | 0.43 | 1.07 |
-| Raw odometry | 7.32 $\pm$ 14.1 | 15.9 | 69.9 | 40.2 |
+| FastSLAM 2.0 | 0.049 $\pm$ 0.057 | 0.075 | 0.328 | 1.003 |
+| GMapping | 0.064 $\pm$ 0.064 | 0.090 | 0.429 | 1.069 |
+| Raw odometry | 7.318 $\pm$ 14.070 | 15.860 | 69.921 | 40.214 |
 
 
 ### ACES (1,279 relations):
@@ -67,9 +67,9 @@ problem-level parameters are matched per dataset where applicable: particle coun
 
 | Trajectory | Trans. mean $\pm$ std (m) | RMSE (m) | Max (m) | Rot. mean (deg) | 
 |---|---|---|---|---|
-| FastSLAM 2.0 | 0.073 $\pm$ 0.189 | 0.203 | 1.50 | 0.46 |
-| GMapping | 0.087 $\pm$ 0.193 | 0.211 | 1.54 | 0.58 |
-| Raw odometry | 0.54 $\pm$ 2.65 | 2.70 | 18.9 | 2.29 |
+| FastSLAM 2.0 | 0.073 $\pm$ 0.189 | 0.203 | 1.501 | 0.457 |
+| GMapping | 0.087 $\pm$ 0.193 | 0.211 | 1.538 | 0.585 |
+| Raw odometry | 0.539 $\pm$ 2.650 | 2.704 | 18.899 | 2.293 |
 
 
 
@@ -85,9 +85,9 @@ problem-level parameters are matched per dataset where applicable: particle coun
 
 | Trajectory | Trans. mean $\pm$ std (m) | RMSE (m) | Max (m) | Rot. mean (deg) |
 |---|---|---|---|---|
-| FastSLAM 2.0 | 0.057 $\pm$ 0.164 | 0.173 | 1.67 | 0.41 |
-| GMapping | 0.194 $\pm$ 0.461 | 0.500 | 3.54 | 0.54 |
-| Raw odometry | 50.3 $\pm$ 128 | 138 | 555 | 9.20 |
+| FastSLAM 2.0 | 0.057 $\pm$ 0.164 | 0.173 | 1.674 | 0.411 |
+| GMapping | 0.194 $\pm$ 0.461 | 0.500 | 3.543 | 0.539 |
+| Raw odometry | 50.252 $\pm$ 128.050 | 137.558 | 555.074 | 9.202 |
 
 
 ## How it works
@@ -165,7 +165,7 @@ python3 tools/run_benchmark.py intel gmapping --seed 42
 
 Each run creates `results/<dataset>_<algo>_<tag>/` containing the config
 snapshot, seed and git commit (`run.json`), log, trajectories (TUM), map
-(pgm/yaml), and — when ground truth exists — `metrics.json` plus evaluation
+(pgm/yaml), and when ground truth exists (.relations) `metrics.json` plus evaluation
 figures. Configs live in `configs/<algo>/default.yaml`; add variants as new
 files and select with `--config <name>`.
 
@@ -179,7 +179,7 @@ ros2 launch clf_publisher dataset_slam.launch.py clf_file:=../datasets/intel.clf
 ```
 
 Add `record_traj:=true` to log the `map → base_footprint` trajectory to
-`traj_file` (default `../results/ros_replay/`) for evo comparison; the
+`traj_file` (default `../results/ros_replay/`), the
 `dataset_gmapping.launch.py` reference runner takes the same options.
 
 **Live `/scan` + `/odom`:**
@@ -188,7 +188,7 @@ Add `record_traj:=true` to log the `map → base_footprint` trajectory to
 ros2 launch fastslam fastslam2.launch.py 
 ```
 
-**Isaac Sim (5.1)** — loads a USD world + RTX-lidar robot and bridges to ROS 2:
+**Isaac Sim 5.1 (requires Isaac Sim and ROS bridge setup)** — loads a USD world + RTX-lidar robot and bridges to ROS 2:
 
 ```bash
 [PATH_TO-ISAACSIM]/python.sh isaacsim/isaacsim_launch.py
