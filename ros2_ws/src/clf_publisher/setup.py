@@ -18,6 +18,7 @@ setup(
     entry_points={
         'console_scripts': [
             'clf_node = clf_publisher.clf_node:main',
+            'traj_recorder = clf_publisher.traj_recorder:main',
         ],
     },
 )

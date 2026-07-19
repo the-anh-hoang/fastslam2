@@ -4,8 +4,12 @@ CLF (CARMEN Log Format) publisher node.
 Reads a .clf file and publishes:
   - /scan        (sensor_msgs/LaserScan)
   - /odom        (nav_msgs/Odometry)
+  - /clock       (rosgraph_msgs/Clock) — dataset time, run SLAM nodes with use_sim_time
   - TF: odom -> base_footprint
   - TF: base_footprint -> base_scan (static)
+
+All messages are stamped with the dataset's own timestamps so trajectories
+from separate runs of the same dataset can be associated by time (evo).
 
 Supports two CARMEN line formats:
 
@@ -25,7 +29,8 @@ ROBOTLASER1 (Freiburg, ACES, etc.):
 import math
 import rclpy
 from rclpy.node import Node
-from rclpy.clock import Clock
+from builtin_interfaces.msg import Time as TimeMsg
+from rosgraph_msgs.msg import Clock
 from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import TransformStamped
@@ -65,6 +70,7 @@ class ClfPublisher(Node):
         # Publishers
         self.scan_pub = self.create_publisher(LaserScan, '/scan', 10)
         self.odom_pub = self.create_publisher(Odometry, '/odom', 10)
+        self.clock_pub = self.create_publisher(Clock, '/clock', 10)
         self.tf_broadcaster = TransformBroadcaster(self)
 
         # Static TF: base_footprint -> base_scan
@@ -154,12 +160,31 @@ class ClfPublisher(Node):
                 except (IndexError, ValueError) as e:
                     self.get_logger().warn(f'Skipping malformed line: {e}')
                     continue
+
+        # CARMEN logs interleave sensor clocks, so timestamps are not always
+        # monotonic (intel.clf: ~12% of entries step backwards, up to 0.9 s).
+        # Sim time must be monotonic — clamp offenders to prev + 1 ms.
+        clamped = 0
+        for i in range(1, len(entries)):
+            if entries[i]['timestamp'] <= entries[i - 1]['timestamp']:
+                entries[i]['timestamp'] = entries[i - 1]['timestamp'] + 1e-3
+                clamped += 1
+        if clamped:
+            self.get_logger().info(f'Clamped {clamped} non-monotonic timestamps')
         return entries
+
+    @staticmethod
+    def _stamp(ts):
+        """Convert a float dataset timestamp (seconds) to a Time message."""
+        msg = TimeMsg()
+        msg.sec = int(ts)
+        msg.nanosec = int((ts - int(ts)) * 1e9)
+        return msg
 
     def _publish_static_laser_tf(self):
         """Publish static transform: base_footprint -> base_scan."""
         t = TransformStamped()
-        t.header.stamp = self.get_clock().now().to_msg()
+        t.header.stamp = self._stamp(self.entries[0]['timestamp'])
         t.header.frame_id = self.base_frame
         t.child_frame_id = self.laser_frame
         t.transform.translation.x = self.laser_x
@@ -182,7 +207,12 @@ class ClfPublisher(Node):
             return
 
         entry = self.entries[self.current_idx]
-        now = self.get_clock().now().to_msg()
+        now = self._stamp(entry['timestamp'])
+
+        # --- Publish sim clock (dataset time) ---
+        clock_msg = Clock()
+        clock_msg.clock = now
+        self.clock_pub.publish(clock_msg)
 
         # --- Publish LaserScan ---
         scan_msg = LaserScan()

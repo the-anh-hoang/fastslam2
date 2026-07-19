@@ -6,11 +6,14 @@ from launch_ros.actions import Node
 import os
 
 
+# Replays a .clf dataset through GMapping as a reference implementation,
+# publishing the same /map topic and map->odom TF as fastslam2_node so the
+# identical RViz session works for both. Run one SLAM node at a time.
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(
             'clf_file',
-            default_value='../datasets/aces.clf',
+            default_value='../datasets/mit-killian.clf',
             description='Path to .clf dataset file (relative to ros2_ws)'
         ),
         DeclareLaunchArgument(
@@ -19,22 +22,17 @@ def generate_launch_description():
             description='Replay rate in Hz'
         ),
         DeclareLaunchArgument(
-            'params_file',
-            default_value=os.path.join('..', 'configs', 'fastslam', 'default.yaml'),
-            description='FastSLAM config yaml (relative to ros2_ws)'
-        ),
-        DeclareLaunchArgument(
             'record_traj',
             default_value='false',
             description='Record the map->base_footprint trajectory to traj_file'
         ),
         DeclareLaunchArgument(
             'traj_file',
-            default_value='../results/ros_replay/fastslam.tum',
+            default_value='../results/ros_replay/gmapping.tum',
             description='Output .tum trajectory path (relative to ros2_ws)'
         ),
 
-        # CLF dataset publisher
+        # CLF dataset publisher (identical to dataset_slam.launch.py)
         Node(
             package='clf_publisher',
             executable='clf_node',
@@ -48,18 +46,26 @@ def generate_launch_description():
             output='screen',
         ),
 
-        # FastSLAM2 node
+        # GMapping reference. Filter parameters come from the shared config
+        # (also read by the offline gmapping_clf_runner); only launch-specific
+        # settings (sim time, frame names) stay inline.
         Node(
-            package='fastslam',
-            executable='fastslam2_node',
-            name='fastslam2_node',
-            parameters=[
-                LaunchConfiguration('params_file')
-            ],
+            package='slam_gmapping',
+            executable='slam_gmapping',
+            name='slam_gmapping',
             output='screen',
+            parameters=[
+                os.path.join('..', 'configs', 'gmapping', 'default.yaml'),
+                {
+                    'use_sim_time': True,
+                    'base_frame': 'base_footprint',
+                    'odom_frame': 'odom',
+                    'map_frame': 'map',
+                },
+            ],
         ),
 
-        # Optional trajectory recorder (record_traj:=true). Records the
+        # Optional trajectory recorder (record_traj:=true). Records gmapping's
         # map->base_footprint trajectory for evo comparison.
         Node(
             package='clf_publisher',
