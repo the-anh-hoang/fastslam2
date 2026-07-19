@@ -1,13 +1,23 @@
-# Editor
 .vscode/
 
-# External repos
-navigation2/
-slam_toolbox/
-turtlebot3/
-openslam_gmapping/
+# result artifacts
+/results/*
+!/results/*/
+/results/*/*
+!/results/*/metrics.json
+!/results/*/run.json
+!/results/*/config.yaml
+/results/archive/
 
-# ROS build artifacts (colcon)
+# carmen
+/datasets/
+
+# isaac sim
+/world/
+/vehicle/
+
+# ros build
+/build/
 ros2_ws/build/
 ros2_ws/install/
 ros2_ws/log/
@@ -15,17 +25,20 @@ ros2_ws/src/build/
 ros2_ws/src/install/
 ros2_ws/src/log/
 
-# Python
+
+# other repos
+/navigation2/
+/slam_toolbox/
+/turtlebot3/
+/openslam_gmapping/
+
 __pycache__/
 *.pyc
 *.pyo
 
-# Isaac Sim / USD
 *.usd_bak
 
-# Map serialization artifacts (regenerated at runtime)
 *.data
 *.posegraph
-
-# 3d model 
+ 
 *.stl
